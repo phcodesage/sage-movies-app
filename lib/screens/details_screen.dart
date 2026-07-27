@@ -413,17 +413,6 @@ class _DetailsScreenState extends State<DetailsScreen> {
                         icon: const Icon(Icons.forward_10, size: 20),
                         label: const Text('+10s', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
                       ),
-                      IconButton(
-                        tooltip: 'Fullscreen Player',
-                        icon: const Icon(Icons.fullscreen, color: Colors.white, size: 28),
-                        onPressed: () {
-                          Navigator.of(context).push(
-                            MaterialPageRoute(
-                              builder: (_) => PlayerScreen(movie: widget.movie),
-                            ),
-                          );
-                        },
-                      ),
                     ],
                   ),
                 ),
