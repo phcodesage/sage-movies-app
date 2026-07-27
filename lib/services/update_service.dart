@@ -181,12 +181,18 @@ class UpdateService {
                     : updateInfo.directApkUrl;
                 final url = Uri.parse(linkStr);
                 try {
-                  final launched = await launchUrl(url, mode: LaunchMode.externalApplication);
-                  if (!launched) {
+                  bool ok = await launchUrl(url, mode: LaunchMode.externalApplication);
+                  if (!ok) {
+                    ok = await launchUrl(url, mode: LaunchMode.inAppWebView);
+                  }
+                  if (!ok) {
                     await launchUrl(url, mode: LaunchMode.platformDefault);
                   }
                 } catch (e) {
                   debugPrint('Launch URL error: $e');
+                  try {
+                    await launchUrl(url);
+                  } catch (_) {}
                 }
               },
               style: ElevatedButton.styleFrom(
