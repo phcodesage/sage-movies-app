@@ -211,4 +211,21 @@ class ApiService {
     final size = isBackdrop ? 'w1280' : 'w500';
     return 'https://image.tmdb.org/t/p/$size$path';
   }
+
+  // Pre-check server availability
+  static Future<Map<String, dynamic>?> checkServers(String type, String id) async {
+    try {
+      final response = await http
+          .get(
+            Uri.parse('$baseUrl/api/check-servers?type=$type&id=$id'),
+            headers: defaultHeaders,
+          )
+          .timeout(const Duration(seconds: 3));
+
+      if (response.statusCode == 200) {
+        return json.decode(response.body) as Map<String, dynamic>;
+      }
+    } catch (_) {}
+    return null;
+  }
 }

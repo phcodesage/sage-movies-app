@@ -41,6 +41,30 @@ class _DetailsScreenState extends State<DetailsScreen> {
     'ja': 'Japanese',
   };
 
+  Map<String, bool> _serverStatus = {};
+  bool _isCheckingServers = false;
+
+  void _precheckServers() async {
+    if (!mounted) return;
+    setState(() => _isCheckingServers = true);
+    final res = await ApiService.checkServers(widget.movie.mediaType, widget.movie.id);
+    if (mounted && res != null) {
+      final statusMap = res['status'] as Map<String, dynamic>?;
+      final bestServer = res['bestServer'] as String?;
+      setState(() {
+        if (statusMap != null) {
+          _serverStatus = statusMap.map((k, v) => MapEntry(k, v == true));
+        }
+        if (bestServer != null && (_serverStatus[_server] != true)) {
+          _server = bestServer;
+        }
+        _isCheckingServers = false;
+      });
+    } else if (mounted) {
+      setState(() => _isCheckingServers = false);
+    }
+  }
+
   @override
   void initState() {
     super.initState();
@@ -79,6 +103,7 @@ class _DetailsScreenState extends State<DetailsScreen> {
     }
 
     _loadStudioAndDetails();
+    _precheckServers();
   }
 
   String? _studioLogoPath;
@@ -597,12 +622,31 @@ class _DetailsScreenState extends State<DetailsScreen> {
                                 isExpanded: true,
                                 dropdownColor: const Color(0xFF16161B),
                                 style: const TextStyle(color: Colors.white, fontSize: 13),
-                                items: _servers.entries
-                                    .map((e) => DropdownMenuItem<String>(
-                                          value: e.key,
-                                          child: Text(e.value),
-                                        ))
-                                    .toList(),
+                                items: _servers.entries.map((e) {
+                                  final status = _serverStatus[e.key];
+                                  String indicator = '';
+                                  Color color = Colors.white70;
+                                  if (_isCheckingServers) {
+                                    indicator = ' (Checking...)';
+                                  } else if (status == true) {
+                                    indicator = '  🟢 Active';
+                                    color = Colors.greenAccent;
+                                  } else if (status == false) {
+                                    indicator = '  🔴 Offline';
+                                    color = Colors.redAccent;
+                                  }
+
+                                  return DropdownMenuItem<String>(
+                                    value: e.key,
+                                    child: Row(
+                                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                      children: [
+                                        Text(e.value, style: const TextStyle(color: Colors.white, fontSize: 13)),
+                                        Text(indicator, style: TextStyle(color: color, fontSize: 10, fontWeight: FontWeight.bold)),
+                                      ],
+                                    ),
+                                  );
+                                }).toList(),
                                 onChanged: (v) {
                                   if (v == null) return;
                                   setState(() => _server = v);
