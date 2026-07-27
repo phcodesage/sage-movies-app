@@ -28,7 +28,7 @@ class AppVersionInfo {
     return AppVersionInfo(
       latestVersion: json['latest_version'] ?? '1.0.2',
       versionCode: json['version_code'] ?? 3,
-      downloadUrl: json['download_url'] ?? 'https://link-center.net/7848832/gBVDxSZ1rUTX',
+      downloadUrl: json['download_url'] ?? 'https://shrinkme.click/wRTWJwKz',
       directApkUrl: json['direct_apk_url'] ??
           'https://pub-bd093e291a8941608e8a6fe70c3aca53.r2.dev/sagemovies-v1.0.0.apk',
       releaseNotes: json['release_notes'] ?? 'New in-app wireless update engine & studio hub features.',
