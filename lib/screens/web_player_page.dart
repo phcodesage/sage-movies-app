@@ -69,8 +69,8 @@ class _WebPlayerPageState extends State<WebPlayerPage> {
 ..loadRequest(
         Uri.parse(widget.url),
         headers: <String, String>{
-          'Referer': 'https://vidsrc.cc/',
-          'Origin': 'https://vidsrc.cc',
+          'Referer': 'https://sagemovies.netlify.app/',
+          'Origin': 'https://sagemovies.netlify.app',
           'Accept-Language': 'en-US,en;q=0.9',
         },
       );

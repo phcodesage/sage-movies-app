@@ -7,6 +7,7 @@ import 'package:sagemovies/screens/search_screen.dart';
 import 'package:sagemovies/theme.dart';
 
 void main() {
+  WidgetsFlutterBinding.ensureInitialized();
   runApp(AppStateProvider(child: const SageMoviesApp()));
 }
 

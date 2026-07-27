@@ -3,37 +3,30 @@ import 'package:http/http.dart' as http;
 import 'package:sagemovies/models/movie.dart';
 
 class ApiService {
-  // Use your production API
-  static const String baseUrl = 'https://sagemovies.site';
-  
-  // For local development, you can switch to:
-  // static const String baseUrl = 'http://localhost:3000';
+  // Production API URL
+  static const String baseUrl = 'https://sagemovies.netlify.app';
+
+  static const Map<String, String> defaultHeaders = {
+    'Accept': 'application/json',
+    'User-Agent': 'Mozilla/5.0 (Linux; Android 13; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Mobile Safari/537.36',
+  };
 
   // Fetch trending movies
   static Future<List<Movie>> fetchTrending({String type = 'movie'}) async {
     try {
-      print('[API] Fetching trending $type from $baseUrl/api/trending/$type');
       final response = await http.get(
         Uri.parse('$baseUrl/api/trending/$type'),
+        headers: defaultHeaders,
       );
-
-      print('[API] Response status: ${response.statusCode}');
       
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
         final results = data['results'] as List;
-        print('[API] Got ${results.length} trending $type items');
-        final movies = results.map((json) => Movie.fromJson(json)).toList();
-        if (movies.isNotEmpty) {
-          print('[API] First movie: ${movies[0].title}, posterUrl: ${movies[0].posterUrl}');
-        }
-        return movies;
+        return results.map((json) => Movie.fromJson(json)).toList();
       } else {
-        print('[API] Error: ${response.statusCode} - ${response.body}');
         throw Exception('Failed to load trending $type');
       }
     } catch (e) {
-      print('[API] Error fetching trending: $e');
       return [];
     }
   }
@@ -41,32 +34,29 @@ class ApiService {
   // Fetch movie collection
   static Future<List<Movie>> fetchMovieCollection() async {
     try {
-      print('[API] Fetching movie collection');
       final response = await http.get(
         Uri.parse('$baseUrl/api/movies/collection'),
+        headers: defaultHeaders,
       );
-
-      print('[API] Movie collection response: ${response.statusCode}');
 
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
         final results = data['results'] as List;
-        print('[API] Got ${results.length} movies in collection');
         return results.map((json) => Movie.fromJson(json)).toList();
       } else {
         throw Exception('Failed to load movie collection');
       }
     } catch (e) {
-      print('[API] Error fetching movie collection: $e');
       return [];
     }
   }
 
-  // Fetch TV collection (romance movies in your API)
+  // Fetch TV collection
   static Future<List<Movie>> fetchTvCollection() async {
     try {
       final response = await http.get(
         Uri.parse('$baseUrl/api/tv/collection'),
+        headers: defaultHeaders,
       );
 
       if (response.statusCode == 200) {
@@ -77,7 +67,6 @@ class ApiService {
         throw Exception('Failed to load TV collection');
       }
     } catch (e) {
-      print('[API] Error fetching TV collection: $e');
       return [];
     }
   }
@@ -85,23 +74,19 @@ class ApiService {
   // Fetch anime collection
   static Future<List<Movie>> fetchAnimeCollection() async {
     try {
-      print('[API] Fetching anime collection');
       final response = await http.get(
         Uri.parse('$baseUrl/api/anime/collection'),
+        headers: defaultHeaders,
       );
-
-      print('[API] Anime collection response: ${response.statusCode}');
 
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
         final results = data['results'] as List;
-        print('[API] Got ${results.length} anime items');
         return results.map((json) => Movie.fromJson(json)).toList();
       } else {
         throw Exception('Failed to load anime collection');
       }
     } catch (e) {
-      print('[API] Error fetching anime collection: $e');
       return [];
     }
   }
@@ -111,6 +96,7 @@ class ApiService {
     try {
       final response = await http.get(
         Uri.parse('$baseUrl/api/movies/genre/$genreId'),
+        headers: defaultHeaders,
       );
 
       if (response.statusCode == 200) {
@@ -121,7 +107,6 @@ class ApiService {
         throw Exception('Failed to load movies by genre');
       }
     } catch (e) {
-      print('[API] Error fetching movies by genre: $e');
       return [];
     }
   }
@@ -131,6 +116,7 @@ class ApiService {
     try {
       final response = await http.get(
         Uri.parse('$baseUrl/api/search?query=${Uri.encodeComponent(query)}'),
+        headers: defaultHeaders,
       );
 
       if (response.statusCode == 200) {
@@ -141,7 +127,6 @@ class ApiService {
         throw Exception('Failed to search');
       }
     } catch (e) {
-      print('[API] Error searching: $e');
       return [];
     }
   }
@@ -151,6 +136,7 @@ class ApiService {
     try {
       final response = await http.get(
         Uri.parse('$baseUrl/api/details/$type/$id'),
+        headers: defaultHeaders,
       );
 
       if (response.statusCode == 200) {
@@ -160,45 +146,68 @@ class ApiService {
         throw Exception('Failed to load details');
       }
     } catch (e) {
-      print('[API] Error fetching details: $e');
       return null;
     }
   }
 
   // Get video embed URL
-  static Future<String?> getVideoSource(String type, String id, {String server = 'vidsrc.cc'}) async {
+  static Future<String?> getVideoSource(String type, String id, {String server = 'player.videasy.net'}) async {
     try {
       final url = '$baseUrl/api/video-sources/$type/$id?server=$server';
-      print('[API] Requesting video source: $url');
-      
-      final response = await http.get(Uri.parse(url));
-      print('[API] Video source response: ${response.statusCode}');
+      final response = await http.get(
+        Uri.parse(url),
+        headers: defaultHeaders,
+      );
 
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
-        final embedURL = data['embedURL'] as String?;
-        print('[API] Got embedURL: $embedURL');
-        
-        if (embedURL == null || embedURL.isEmpty) {
-          print('[API] WARNING: embedURL is null or empty for id=$id');
-        }
-        
-        return embedURL;
+        return data['embedURL'] as String?;
       } else {
-        print('[API] Error response: ${response.body}');
-        throw Exception('Failed to get video source: ${response.statusCode}');
+        return null;
       }
     } catch (e) {
-      print('[API] Error getting video source for id=$id, type=$type, server=$server: $e');
       return null;
     }
+  }
+
+  // Fetch full details including production companies (studios)
+  static Future<Map<String, dynamic>?> fetchFullDetails(String type, String id) async {
+    try {
+      final response = await http.get(
+        Uri.parse('$baseUrl/api/movie/$id?type=$type'),
+        headers: defaultHeaders,
+      );
+      if (response.statusCode == 200) {
+        return json.decode(response.body) as Map<String, dynamic>;
+      }
+    } catch (e) {
+      // fallback
+    }
+    return null;
+  }
+
+  // Fetch movies by studio (production company)
+  static Future<List<Movie>> fetchMoviesByStudio(int studioId) async {
+    try {
+      final response = await http.get(
+        Uri.parse('$baseUrl/api/movies/studio/$studioId'),
+        headers: defaultHeaders,
+      );
+
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        final results = data['results'] as List;
+        return results.map((json) => Movie.fromJson(json)).toList();
+      }
+    } catch (e) {
+      // fallback
+    }
+    return [];
   }
 
   // Helper to build image URL
   static String getImageUrl(String? path, {bool isBackdrop = false}) {
     if (path == null || path.isEmpty) return '';
-    
-    // TMDB image base URL
     final size = isBackdrop ? 'w1280' : 'w500';
     return 'https://image.tmdb.org/t/p/$size$path';
   }

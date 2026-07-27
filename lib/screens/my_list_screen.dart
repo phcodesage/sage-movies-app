@@ -1,4 +1,4 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 import 'package:sagemovies/app_state.dart';
 import 'package:sagemovies/models/movie.dart';
 import 'package:sagemovies/screens/details_screen.dart';
@@ -10,31 +10,26 @@ class MyListScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final app = AppStateProvider.of(context);
-    final ids = app.myListIds.toList();
+    final movies = app.myList;
 
     return Scaffold(
-      appBar: AppBar(title: const Text('My List')),
-      body: ids.isEmpty
+      appBar: AppBar(
+        title: Text('My List (${movies.length})'),
+      ),
+      body: movies.isEmpty
           ? const _EmptyState()
           : Padding(
               padding: const EdgeInsets.all(12),
               child: GridView.builder(
                 gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
                   crossAxisCount: 3,
-                  mainAxisSpacing: 8,
+                  mainAxisSpacing: 12,
                   crossAxisSpacing: 8,
-                  childAspectRatio: 2 / 3,
+                  childAspectRatio: 0.55,
                 ),
-                itemCount: ids.length,
+                itemCount: movies.length,
                 itemBuilder: (context, i) {
-                  final movie = Movie(
-                    id: ids[i],
-                    title: 'Saved Movie',
-                    posterUrl: '',
-                    backdropUrl: '',
-                    overview: '',
-                    rating: 0.0,
-                  );
+                  final movie = movies[i];
                   return GestureDetector(
                     onTap: () {
                       Navigator.of(context).push(
@@ -43,7 +38,19 @@ class MyListScreen extends StatelessWidget {
                         ),
                       );
                     },
-                    child: PosterTile(movie: movie),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Expanded(child: PosterTile(movie: movie)),
+                        const SizedBox(height: 4),
+                        Text(
+                          movie.title,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(fontSize: 11, color: Colors.white70),
+                        ),
+                      ],
+                    ),
                   );
                 },
               ),

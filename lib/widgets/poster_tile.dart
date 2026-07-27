@@ -1,4 +1,4 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 import 'package:sagemovies/app_state.dart';
 import 'package:sagemovies/models/movie.dart';
 
@@ -26,6 +26,7 @@ class PosterTile extends StatelessWidget {
               Image.network(
                 movie.posterUrl,
                 fit: BoxFit.cover,
+                cacheWidth: 300,
                 filterQuality: FilterQuality.low,
                 errorBuilder: (context, error, stack) => _fallback(),
                 loadingBuilder: (context, child, progress) {
@@ -34,10 +35,63 @@ class PosterTile extends StatelessWidget {
                 },
               ),
               _GradientBottom(),
+              if (movie.rating > 0)
+                Positioned(
+                  left: 6,
+                  bottom: 6,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: Colors.black.withOpacity(0.75),
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(Icons.star, color: Colors.amber, size: 10),
+                        const SizedBox(width: 2),
+                        Text(
+                          movie.rating.toStringAsFixed(1),
+                          style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              Positioned(
+                left: 6,
+                top: 6,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFE50914),
+                    borderRadius: BorderRadius.circular(3),
+                    boxShadow: const [
+                      BoxShadow(color: Colors.black45, blurRadius: 4),
+                    ],
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: const [
+                      Icon(Icons.movie_creation_outlined, color: Colors.white, size: 8),
+                      SizedBox(width: 2),
+                      Text(
+                        'STUDIO',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 7.5,
+                          fontWeight: FontWeight.w900,
+                          letterSpacing: 0.4,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
               Positioned(
                 right: 6,
                 top: 6,
-                child: _MyListButton(movieId: movie.id),
+                child: _MyListButton(movie: movie),
               ),
             ],
           ),
@@ -75,15 +129,15 @@ class _GradientBottom extends StatelessWidget {
 }
 
 class _MyListButton extends StatelessWidget {
-  final String movieId;
-  const _MyListButton({required this.movieId});
+  final Movie movie;
+  const _MyListButton({required this.movie});
 
   @override
   Widget build(BuildContext context) {
     final app = AppStateProvider.of(context);
-    final inList = app.isInMyList(movieId);
+    final inList = app.isInMyList(movie.id);
     return InkWell(
-      onTap: () => app.toggleMyList(movieId),
+      onTap: () => app.toggleMyList(movie),
       child: Container(
         padding: const EdgeInsets.all(4),
         decoration: BoxDecoration(

@@ -1,4 +1,4 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 import 'package:sagemovies/services/api_service.dart';
 import 'package:sagemovies/models/movie.dart';
 import 'package:sagemovies/screens/details_screen.dart';
@@ -16,9 +16,10 @@ class _HomeScreenState extends State<HomeScreen> {
   final _scrollController = ScrollController();
   double _elevation = 0;
   
-  List<Movie> _trending = [];
-  List<Movie> _popular = [];
-  List<Movie> _originals = [];
+  List<Movie> _trendingMovies = [];
+  List<Movie> _actionMovies = [];
+  List<Movie> _trendingTv = [];
+  List<Movie> _animeList = [];
   bool _loading = true;
 
   @override
@@ -33,20 +34,29 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Future<void> _loadData() async {
     try {
-      final trending = await ApiService.fetchTrending();
-      final popular = await ApiService.fetchMovieCollection(); // Using collection as popular for now
-      final originals = await ApiService.fetchAnimeCollection(); // Using anime as originals for variety
+      // Matching web version initial fetch sequence:
+      // 1. Trending Movies (/api/movies/collection)
+      // 2. Action Movies (/api/movies/genre/28)
+      // 3. Popular TV Shows (/api/tv/collection)
+      // 4. Anime Collection (/api/anime/collection)
+      final results = await Future.wait([
+        ApiService.fetchMovieCollection(),
+        ApiService.fetchMoviesByGenre(28),
+        ApiService.fetchTvCollection(),
+        ApiService.fetchAnimeCollection(),
+      ]);
 
       if (mounted) {
         setState(() {
-          _trending = trending;
-          _popular = popular;
-          _originals = originals;
+          _trendingMovies = results[0];
+          _actionMovies = results[1];
+          _trendingTv = results[2];
+          _animeList = results[3];
           _loading = false;
         });
       }
     } catch (e) {
-      print('Error loading home data: $e');
+      debugPrint('Error loading home data: $e');
       if (mounted) {
         setState(() => _loading = false);
       }
@@ -62,52 +72,77 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   Widget build(BuildContext context) {
     if (_loading) {
-      return const Scaffold(
+      return Scaffold(
         backgroundColor: Colors.black,
-        body: Center(child: CircularProgressIndicator()),
-      );
-    }
-
-    final feature = _trending.isNotEmpty ? _trending.first : null;
-
-    return CustomScrollView(
-      controller: _scrollController,
-      slivers: [
-        SliverAppBar(
-          pinned: true,
-          backgroundColor: _elevation == 0 ? Colors.transparent : const Color(0xE6000000),
-          title: const _BrandTitle(),
-        ),
-        if (feature != null)
-          SliverToBoxAdapter(child: HeroBanner(movie: feature)),
-        SliverToBoxAdapter(
+        body: Center(
           child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              if (_trending.isNotEmpty)
-                SectionRow(
-                  title: 'Trending Now',
-                  movies: _trending,
-                  onTap: (m) => _openDetails(context, m),
-                ),
-              if (_popular.isNotEmpty)
-                SectionRow(
-                  title: 'Popular on SageMovies',
-                  movies: _popular,
-                  onTap: (m) => _openDetails(context, m),
-                ),
-              if (_originals.isNotEmpty)
-                SectionRow(
-                  title: 'Anime Collection',
-                  movies: _originals,
-                  onTap: (m) => _openDetails(context, m),
-                  tall: true,
-                ),
-              const SizedBox(height: 24),
+            mainAxisSize: MainAxisSize.min,
+            children: const [
+              CircularProgressIndicator(color: Color(0xFFE50914)),
+              SizedBox(height: 16),
+              Text(
+                'Loading Sage Movies...',
+                style: TextStyle(color: Colors.white70, letterSpacing: 1),
+              ),
             ],
           ),
         ),
-      ],
+      );
+    }
+
+    final feature = _trendingMovies.isNotEmpty ? _trendingMovies.first : null;
+
+    return Scaffold(
+      backgroundColor: Colors.black,
+      body: RefreshIndicator(
+        color: const Color(0xFFE50914),
+        onRefresh: _loadData,
+        child: CustomScrollView(
+          controller: _scrollController,
+          slivers: [
+            SliverAppBar(
+              pinned: true,
+              backgroundColor: _elevation == 0 ? Colors.transparent : const Color(0xE6000000),
+              title: const _BrandTitle(),
+            ),
+            if (_trendingMovies.isNotEmpty)
+              SliverToBoxAdapter(child: HeroBanner(movies: _trendingMovies)),
+            SliverToBoxAdapter(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if (_trendingMovies.isNotEmpty)
+                    SectionRow(
+                      title: 'Trending Movies',
+                      movies: _trendingMovies,
+                      onTap: (m) => _openDetails(context, m),
+                    ),
+                  if (_actionMovies.isNotEmpty)
+                    SectionRow(
+                      title: 'Action Movies',
+                      movies: _actionMovies,
+                      onTap: (m) => _openDetails(context, m),
+                    ),
+                  if (_trendingTv.isNotEmpty)
+                    SectionRow(
+                      title: 'Popular TV Shows',
+                      movies: _trendingTv,
+                      onTap: (m) => _openDetails(context, m),
+                    ),
+                  if (_animeList.isNotEmpty)
+                    SectionRow(
+                      title: 'Anime Collection',
+                      movies: _animeList,
+                      onTap: (m) => _openDetails(context, m),
+                      tall: true,
+                    ),
+                  const SizedBox(height: 32),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 

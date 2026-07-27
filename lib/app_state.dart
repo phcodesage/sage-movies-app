@@ -1,8 +1,10 @@
-﻿import 'package:flutter/material.dart';
+import 'dart:convert';
+import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:sagemovies/models/movie.dart';
 
 class AppState extends ChangeNotifier {
-  final Set<String> _myListIds = <String>{};
+  final Map<String, Movie> _myListMap = <String, Movie>{};
 
   AppState() {
     _load();
@@ -11,34 +13,61 @@ class AppState extends ChangeNotifier {
   Future<void> _load() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      final List<String>? ids = prefs.getStringList('my_list_ids');
-      if (ids != null) {
-        _myListIds.addAll(ids);
-        notifyListeners();
+      final String? jsonStr = prefs.getString('my_list_movies_v2');
+      if (jsonStr != null && jsonStr.isNotEmpty) {
+        final Map<String, dynamic> decoded = json.decode(jsonStr);
+        decoded.forEach((key, value) {
+          if (value is Map<String, dynamic>) {
+            _myListMap[key] = Movie.fromJson(value);
+          }
+        });
+      } else {
+        // Migration from legacy list of IDs if available
+        final List<String>? legacyIds = prefs.getStringList('my_list_ids');
+        if (legacyIds != null) {
+          for (final id in legacyIds) {
+            _myListMap[id] = Movie(
+              id: id,
+              title: 'Saved Movie #$id',
+              posterUrl: '',
+              backdropUrl: '',
+              overview: '',
+              rating: 0.0,
+            );
+          }
+        }
       }
+      notifyListeners();
     } catch (e) {
-      print('Error loading my list: $e');
+      debugPrint('Error loading my list: $e');
     }
   }
 
   Future<void> _save() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      await prefs.setStringList('my_list_ids', _myListIds.toList());
+      final Map<String, dynamic> jsonMap = {};
+      _myListMap.forEach((key, movie) {
+        jsonMap[key] = movie.toJson();
+      });
+      await prefs.setString('my_list_movies_v2', json.encode(jsonMap));
+      await prefs.setStringList('my_list_ids', _myListMap.keys.toList());
     } catch (e) {
-      print('Error saving my list: $e');
+      debugPrint('Error saving my list: $e');
     }
   }
 
-  bool isInMyList(String id) => _myListIds.contains(id);
+  bool isInMyList(String id) => _myListMap.containsKey(id);
 
-  Set<String> get myListIds => Set.unmodifiable(_myListIds);
+  Set<String> get myListIds => Set.unmodifiable(_myListMap.keys.toSet());
 
-  void toggleMyList(String id) {
-    if (_myListIds.contains(id)) {
-      _myListIds.remove(id);
+  List<Movie> get myList => _myListMap.values.toList();
+
+  void toggleMyList(Movie movie) {
+    if (_myListMap.containsKey(movie.id)) {
+      _myListMap.remove(movie.id);
     } else {
-      _myListIds.add(id);
+      _myListMap[movie.id] = movie;
     }
     notifyListeners();
     _save();
