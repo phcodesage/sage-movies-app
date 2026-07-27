@@ -5,6 +5,7 @@ import 'package:sagemovies/app_state.dart';
 import 'package:sagemovies/models/movie.dart';
 import 'package:sagemovies/screens/player_screen.dart';
 import 'package:sagemovies/services/api_service.dart';
+import 'package:sagemovies/services/toast_service.dart';
 
 class DetailsScreen extends StatefulWidget {
   final Movie movie;
@@ -787,7 +788,14 @@ class _DetailsScreenState extends State<DetailsScreen> {
                               padding: const EdgeInsets.symmetric(vertical: 12),
                               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                             ),
-                            onPressed: () => app.toggleMyList(widget.movie),
+                            onPressed: () {
+                              final added = app.toggleMyList(widget.movie);
+                              if (added) {
+                                ToastService.showSuccess(context, '"${widget.movie.title}" added to My List');
+                              } else {
+                                ToastService.showInfo(context, '"${widget.movie.title}" removed from My List');
+                              }
+                            },
                             icon: Icon(inList ? Icons.check : Icons.add, size: 18),
                             label: Text(inList ? 'In My List' : 'Add to My List'),
                           ),

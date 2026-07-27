@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:sagemovies/app_state.dart';
 import 'package:sagemovies/models/movie.dart';
 import 'package:sagemovies/screens/studio_movies_screen.dart';
+import 'package:sagemovies/services/toast_service.dart';
 
 class PosterTile extends StatelessWidget {
   final Movie movie;
@@ -161,7 +162,14 @@ class _MyListButton extends StatelessWidget {
     final app = AppStateProvider.of(context);
     final inList = app.isInMyList(movie.id);
     return InkWell(
-      onTap: () => app.toggleMyList(movie),
+      onTap: () {
+        final added = app.toggleMyList(movie);
+        if (added) {
+          ToastService.showSuccess(context, '"${movie.title}" added to My List');
+        } else {
+          ToastService.showInfo(context, '"${movie.title}" removed from My List');
+        }
+      },
       child: Container(
         padding: const EdgeInsets.all(4),
         decoration: BoxDecoration(

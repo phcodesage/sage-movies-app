@@ -63,14 +63,16 @@ class AppState extends ChangeNotifier {
 
   List<Movie> get myList => _myListMap.values.toList();
 
-  void toggleMyList(Movie movie) {
-    if (_myListMap.containsKey(movie.id)) {
-      _myListMap.remove(movie.id);
-    } else {
+  bool toggleMyList(Movie movie) {
+    final added = !_myListMap.containsKey(movie.id);
+    if (added) {
       _myListMap[movie.id] = movie;
+    } else {
+      _myListMap.remove(movie.id);
     }
     notifyListeners();
     _save();
+    return added;
   }
 }
 
