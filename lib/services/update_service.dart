@@ -176,9 +176,17 @@ class UpdateService {
               ),
             ElevatedButton.icon(
               onPressed: () async {
-                final url = Uri.parse(updateInfo.downloadUrl);
-                if (await canLaunchUrl(url)) {
-                  await launchUrl(url, mode: LaunchMode.externalApplication);
+                final linkStr = updateInfo.downloadUrl.isNotEmpty
+                    ? updateInfo.downloadUrl
+                    : updateInfo.directApkUrl;
+                final url = Uri.parse(linkStr);
+                try {
+                  final launched = await launchUrl(url, mode: LaunchMode.externalApplication);
+                  if (!launched) {
+                    await launchUrl(url, mode: LaunchMode.platformDefault);
+                  }
+                } catch (e) {
+                  debugPrint('Launch URL error: $e');
                 }
               },
               style: ElevatedButton.styleFrom(
