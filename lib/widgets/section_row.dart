@@ -40,6 +40,21 @@ class SectionRow extends StatelessWidget {
             separatorBuilder: (context, _) => const SizedBox(width: 10),
             itemBuilder: (context, i) {
               final m = movies[i];
+              String? derivedStudio;
+              if (title.contains('Disney+')) derivedStudio = 'Disney+';
+              else if (title.contains('Netflix')) derivedStudio = 'Netflix';
+              else if (title.contains('Prime Video')) derivedStudio = 'Prime Video';
+              else if (title.contains('Apple TV+')) derivedStudio = 'Apple TV+';
+              else if (title.contains('HBO')) derivedStudio = 'HBO Max';
+              else if (title.contains('Paramount')) derivedStudio = 'Paramount+';
+              else if (title.contains('Vivamax')) derivedStudio = 'Vivamax';
+              else if (title.contains('Hulu')) derivedStudio = 'Hulu';
+              else if (title.contains('Warner')) derivedStudio = 'Warner Bros';
+              else if (title.contains('Marvel')) derivedStudio = 'Marvel';
+              else if (title.contains('Universal')) derivedStudio = 'Universal';
+              else if (title.contains('Sony')) derivedStudio = 'Sony';
+              else if (title.contains('A24')) derivedStudio = 'A24';
+
               return SizedBox(
                 width: itemWidth,
                 child: Column(
@@ -49,6 +64,7 @@ class SectionRow extends StatelessWidget {
                       child: PosterTile(
                         movie: m,
                         tall: tall,
+                        studioName: derivedStudio,
                         onTap: () => onTap(m),
                       ),
                     ),

@@ -7,13 +7,23 @@ class PosterTile extends StatelessWidget {
   final Movie movie;
   final VoidCallback? onTap;
   final bool tall;
+  final String? studioName;
 
-  const PosterTile({super.key, required this.movie, this.onTap, this.tall = false});
+  const PosterTile({
+    super.key,
+    required this.movie,
+    this.onTap,
+    this.tall = false,
+    this.studioName,
+  });
 
   @override
   Widget build(BuildContext context) {
     final radius = BorderRadius.circular(6);
-    final aspect = tall ? 2 / 3 : 2 / 3; // same ratio; tall sections can adjust height outside
+    final aspect = tall ? 2 / 3 : 2 / 3;
+    final badgeLabel = (studioName != null && studioName!.trim().isNotEmpty)
+        ? studioName!.trim().toUpperCase()
+        : 'STUDIO';
 
     return GestureDetector(
       onTap: onTap,
@@ -67,7 +77,7 @@ class PosterTile extends StatelessWidget {
                     Navigator.of(context).push(
                       MaterialPageRoute(
                         builder: (_) => StudioMoviesScreen(
-                          studioName: movie.title,
+                          studioName: badgeLabel,
                           logoUrl: '',
                         ),
                       ),
@@ -75,7 +85,7 @@ class PosterTile extends StatelessWidget {
                   },
                   borderRadius: BorderRadius.circular(3),
                   child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                    padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2.5),
                     decoration: BoxDecoration(
                       color: const Color(0xFFE50914),
                       borderRadius: BorderRadius.circular(3),
@@ -85,14 +95,14 @@ class PosterTile extends StatelessWidget {
                     ),
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
-                      children: const [
-                        Icon(Icons.movie_creation_outlined, color: Colors.white, size: 8),
-                        SizedBox(width: 2),
+                      children: [
+                        const Icon(Icons.movie_creation_outlined, color: Colors.white, size: 9),
+                        const SizedBox(width: 3),
                         Text(
-                          'STUDIO',
-                          style: TextStyle(
+                          badgeLabel,
+                          style: const TextStyle(
                             color: Colors.white,
-                            fontSize: 7.5,
+                            fontSize: 8,
                             fontWeight: FontWeight.w900,
                             letterSpacing: 0.4,
                           ),

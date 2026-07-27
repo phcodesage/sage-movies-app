@@ -162,7 +162,10 @@ class _StudioMoviesScreenState extends State<StudioMoviesScreen> {
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
                                   Expanded(
-                                    child: PosterTile(movie: movie),
+                                    child: PosterTile(
+                                      movie: movie,
+                                      studioName: widget.studioName,
+                                    ),
                                   ),
                                   const SizedBox(height: 6),
                                   Text(
