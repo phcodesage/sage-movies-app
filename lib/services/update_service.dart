@@ -38,8 +38,8 @@ class AppVersionInfo {
 }
 
 class UpdateService {
-  static const int currentVersionCode = 3;
-  static const String currentVersionName = '1.0.2';
+  static const int currentVersionCode = 4;
+  static const String currentVersionName = '1.0.3';
   static const MethodChannel _installerChannel =
       MethodChannel('com.example.sagemovies/installer');
 
