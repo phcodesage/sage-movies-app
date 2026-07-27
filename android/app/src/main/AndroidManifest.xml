@@ -1,9 +1,9 @@
-﻿<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <!-- Internet permission for API calls -->
     <uses-permission android:name="android.permission.INTERNET" />
     
     <application
-        android:label="sagemovies"
+        android:label="SageMovies"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher"
         android:usesCleartextTraffic="true"
