@@ -23,20 +23,21 @@ class AppVersionInfo {
 
   factory AppVersionInfo.fromJson(Map<String, dynamic> json) {
     return AppVersionInfo(
-      latestVersion: json['latest_version'] ?? '1.0.0',
-      versionCode: json['version_code'] ?? 1,
+      latestVersion: json['latest_version'] ?? '1.0.1',
+      versionCode: json['version_code'] ?? 2,
       downloadUrl: json['download_url'] ?? 'https://link-center.net/7848832/gBVDxSZ1rUTX',
       directApkUrl: json['direct_apk_url'] ?? '',
-      releaseNotes: json['release_notes'] ?? 'New features and bug fixes available.',
+      releaseNotes: json['release_notes'] ?? 'New features and performance updates available.',
       forceUpdate: json['force_update'] ?? false,
     );
   }
 }
 
 class UpdateService {
-  // Current app version code installed locally
   static const int currentVersionCode = 1;
   static const String currentVersionName = '1.0.0';
+
+  static ValueNotifier<AppVersionInfo?> availableUpdate = ValueNotifier(null);
 
   static Future<AppVersionInfo?> checkUpdate() async {
     try {
@@ -45,25 +46,43 @@ class UpdateService {
             Uri.parse('${ApiService.baseUrl}/api/app-version'),
             headers: ApiService.defaultHeaders,
           )
-          .timeout(const Duration(seconds: 4));
+          .timeout(const Duration(seconds: 5));
 
       if (response.statusCode == 200) {
         final data = json.decode(response.body) as Map<String, dynamic>;
         final info = AppVersionInfo.fromJson(data);
         if (info.versionCode > currentVersionCode) {
+          availableUpdate.value = info;
           return info;
         }
       }
-    } catch (_) {
-      // Ignore network errors on check
+    } catch (e) {
+      debugPrint('Update check error: $e');
     }
     return null;
   }
 
-  static void promptUpdateIfNeeded(BuildContext context) async {
+  static void promptUpdateIfNeeded(BuildContext context, {bool showNoUpdateToast = false}) async {
     final updateInfo = await checkUpdate();
-    if (updateInfo == null || !context.mounted) return;
 
+    if (!context.mounted) return;
+
+    if (updateInfo == null) {
+      if (showNoUpdateToast) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Your app is up to date (v1.0.0)'),
+            backgroundColor: Color(0xFF1E1E24),
+          ),
+        );
+      }
+      return;
+    }
+
+    showUpdateDialog(context, updateInfo);
+  }
+
+  static void showUpdateDialog(BuildContext context, AppVersionInfo updateInfo) {
     showDialog(
       context: context,
       barrierDismissible: !updateInfo.forceUpdate,

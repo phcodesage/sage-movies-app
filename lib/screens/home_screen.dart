@@ -160,10 +160,52 @@ class _BrandTitle extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Row(
-      children: const [
-        Text('SAGE', style: TextStyle(fontWeight: FontWeight.bold, letterSpacing: 2)),
-        SizedBox(width: 4),
-        Text('MOVIES', style: TextStyle(color: Color(0xFFE50914), fontWeight: FontWeight.bold, letterSpacing: 2)),
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          children: const [
+            Text('SAGE', style: TextStyle(fontWeight: FontWeight.bold, letterSpacing: 2)),
+            SizedBox(width: 4),
+            Text('MOVIES', style: TextStyle(color: Color(0xFFE50914), fontWeight: FontWeight.bold, letterSpacing: 2)),
+          ],
+        ),
+        ValueListenableBuilder<AppVersionInfo?>(
+          valueListenable: UpdateService.availableUpdate,
+          builder: (context, updateInfo, child) {
+            if (updateInfo == null) return const SizedBox.shrink();
+            return InkWell(
+              onTap: () => UpdateService.showUpdateDialog(context, updateInfo),
+              borderRadius: BorderRadius.circular(20),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFE50914),
+                  borderRadius: BorderRadius.circular(20),
+                  boxShadow: const [
+                    BoxShadow(color: Color(0x66E50914), blurRadius: 8, spreadRadius: 1),
+                  ],
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.system_update_rounded, color: Colors.white, size: 12),
+                    const SizedBox(width: 4),
+                    Text(
+                      'UPDATE ${updateInfo.latestVersion}',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 10,
+                        fontWeight: FontWeight.w900,
+                        letterSpacing: 0.5,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        ),
       ],
     );
   }
