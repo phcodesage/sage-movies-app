@@ -25,14 +25,14 @@ class _SearchScreenState extends State<SearchScreen> {
   String? _selectedLetter;
 
   final List<Map<String, String>> _popularPlatforms = [
-    {'name': 'Vivamax', 'asset': 'assets/studios/vivamax.png'},
-    {'name': 'Netflix', 'asset': 'assets/studios/netflix.png'},
-    {'name': 'Disney+', 'asset': 'assets/studios/disney.png'},
-    {'name': 'Prime Video', 'asset': 'assets/studios/prime.png'},
-    {'name': 'Apple TV+', 'asset': 'assets/studios/appletv.png'},
-    {'name': 'HBO Max', 'asset': 'assets/studios/hbo.png'},
-    {'name': 'Paramount+', 'asset': 'assets/studios/paramount.png'},
-    {'name': 'Hulu', 'asset': 'assets/studios/hulu.png'},
+    {'name': 'Vivamax', 'url': 'https://image.tmdb.org/t/p/w92/149142.png'},
+    {'name': 'Netflix', 'url': 'https://image.tmdb.org/t/p/w92/wwemzKWXHqRERyuR2VvM1yA4225.png'},
+    {'name': 'Disney+', 'url': 'https://image.tmdb.org/t/p/w92/7xOCo2g1u4n6p425d0xQ.png'},
+    {'name': 'Prime Video', 'url': 'https://image.tmdb.org/t/p/w92/if1Q8Tewh688f28j5t66u2j3441.png'},
+    {'name': 'Apple TV+', 'url': 'https://image.tmdb.org/t/p/w92/6vB2F9c4e0p9G6j96j40j4.png'},
+    {'name': 'HBO Max', 'url': 'https://image.tmdb.org/t/p/w92/1DSpQ9G6537756f4d1e2.png'},
+    {'name': 'Paramount+', 'url': 'https://image.tmdb.org/t/p/w92/8342478f2441.png'},
+    {'name': 'Hulu', 'url': 'https://image.tmdb.org/t/p/w92/pqUtCleNUiTLLGsWyR62C92W67j.png'},
   ];
 
   final List<String> _genres = [
@@ -201,7 +201,7 @@ class _SearchScreenState extends State<SearchScreen> {
         itemBuilder: (context, i) {
           final platform = _popularPlatforms[i];
           final name = platform['name']!;
-          final asset = platform['asset']!;
+          final url = platform['url']!;
 
           return Padding(
             padding: const EdgeInsets.only(right: 8),
@@ -218,10 +218,11 @@ class _SearchScreenState extends State<SearchScreen> {
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Image.asset(
-                      asset,
+                    Image.network(
+                      url,
                       width: 18,
                       height: 18,
+                      fit: BoxFit.contain,
                       errorBuilder: (context, error, stack) =>
                           const Icon(Icons.movie_filter, size: 16, color: Color(0xFFE50914)),
                     ),
