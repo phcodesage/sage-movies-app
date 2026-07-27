@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:sagemovies/app_state.dart';
 import 'package:sagemovies/models/movie.dart';
+import 'package:sagemovies/screens/studio_movies_screen.dart';
 
 class PosterTile extends StatelessWidget {
   final Movie movie;
@@ -61,30 +62,43 @@ class PosterTile extends StatelessWidget {
               Positioned(
                 left: 6,
                 top: 6,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFE50914),
-                    borderRadius: BorderRadius.circular(3),
-                    boxShadow: const [
-                      BoxShadow(color: Colors.black45, blurRadius: 4),
-                    ],
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: const [
-                      Icon(Icons.movie_creation_outlined, color: Colors.white, size: 8),
-                      SizedBox(width: 2),
-                      Text(
-                        'STUDIO',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 7.5,
-                          fontWeight: FontWeight.w900,
-                          letterSpacing: 0.4,
+                child: InkWell(
+                  onTap: () {
+                    Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (_) => StudioMoviesScreen(
+                          studioName: movie.title,
+                          logoUrl: '',
                         ),
                       ),
-                    ],
+                    );
+                  },
+                  borderRadius: BorderRadius.circular(3),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFE50914),
+                      borderRadius: BorderRadius.circular(3),
+                      boxShadow: const [
+                        BoxShadow(color: Colors.black45, blurRadius: 4),
+                      ],
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: const [
+                        Icon(Icons.movie_creation_outlined, color: Colors.white, size: 8),
+                        SizedBox(width: 2),
+                        Text(
+                          'STUDIO',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 7.5,
+                            fontWeight: FontWeight.w900,
+                            letterSpacing: 0.4,
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
               ),

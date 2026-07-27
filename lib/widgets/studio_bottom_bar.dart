@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:sagemovies/screens/studio_movies_screen.dart';
 
 class StudioBottomBar extends StatelessWidget {
   final Function(String query)? onStudioTap;
@@ -48,6 +49,14 @@ class StudioBottomBar extends StatelessWidget {
                 if (onStudioTap != null) {
                   onStudioTap!(query);
                 }
+                Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) => StudioMoviesScreen(
+                      studioName: name,
+                      logoUrl: url,
+                    ),
+                  ),
+                );
               },
               borderRadius: BorderRadius.circular(10),
               child: Container(
