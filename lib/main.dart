@@ -5,6 +5,7 @@ import 'package:sagemovies/screens/home_screen.dart';
 import 'package:sagemovies/screens/my_list_screen.dart';
 import 'package:sagemovies/screens/search_screen.dart';
 import 'package:sagemovies/theme.dart';
+import 'package:sagemovies/widgets/studio_bottom_bar.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -49,15 +50,25 @@ class _MainScaffoldState extends State<_MainScaffold> {
         index: _index,
         children: _pages,
       ),
-      bottomNavigationBar: BottomNavigationBar(
-        currentIndex: _index,
-        onTap: (i) => setState(() => _index = i),
-        type: BottomNavigationBarType.fixed,
-        items: const [
-          BottomNavigationBarItem(icon: Icon(Icons.home), label: 'Home'),
-          BottomNavigationBarItem(icon: Icon(Icons.search), label: 'Search'),
-          BottomNavigationBarItem(icon: Icon(Icons.download), label: 'Downloads'),
-          BottomNavigationBarItem(icon: Icon(Icons.list), label: 'My List'),
+      bottomNavigationBar: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          StudioBottomBar(
+            onStudioTap: (query) {
+              setState(() => _index = 1);
+            },
+          ),
+          BottomNavigationBar(
+            currentIndex: _index,
+            onTap: (i) => setState(() => _index = i),
+            type: BottomNavigationBarType.fixed,
+            items: const [
+              BottomNavigationBarItem(icon: Icon(Icons.home), label: 'Home'),
+              BottomNavigationBarItem(icon: Icon(Icons.search), label: 'Search'),
+              BottomNavigationBarItem(icon: Icon(Icons.download), label: 'Downloads'),
+              BottomNavigationBarItem(icon: Icon(Icons.list), label: 'My List'),
+            ],
+          ),
         ],
       ),
     );
