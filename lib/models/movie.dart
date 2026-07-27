@@ -8,6 +8,7 @@ class Movie {
   final String mediaType;
   final String? releaseDate;
   final String? playUrl; // Optional explicit embed URL
+  final int relevanceScore;
 
   const Movie({
     required this.id,
@@ -19,6 +20,7 @@ class Movie {
     this.mediaType = 'movie',
     this.releaseDate,
     this.playUrl,
+    this.relevanceScore = 0,
   });
 
   factory Movie.fromJson(Map<String, dynamic> json) {
@@ -29,6 +31,7 @@ class Movie {
     final rating = (json['vote_average'] ?? 0.0).toDouble();
     final mediaType = json['media_type'] ?? 'movie';
     final releaseDate = json['release_date'] ?? json['first_air_date'];
+    final relevanceScore = (json['relevance_score'] ?? 0) as int;
 
     final posterUrl = posterPath.isNotEmpty
         ? 'https://image.tmdb.org/t/p/w500$posterPath'
@@ -47,6 +50,7 @@ class Movie {
       mediaType: mediaType,
       releaseDate: releaseDate,
       playUrl: json['embed_url'] as String?,
+      relevanceScore: relevanceScore,
     );
   }
 
