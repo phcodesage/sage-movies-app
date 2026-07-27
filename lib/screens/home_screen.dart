@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:sagemovies/services/api_service.dart';
+import 'package:sagemovies/services/update_service.dart';
 import 'package:sagemovies/models/movie.dart';
 import 'package:sagemovies/screens/details_screen.dart';
 import 'package:sagemovies/widgets/hero_banner.dart';
@@ -34,11 +35,6 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Future<void> _loadData() async {
     try {
-      // Matching web version initial fetch sequence:
-      // 1. Trending Movies (/api/movies/collection)
-      // 2. Action Movies (/api/movies/genre/28)
-      // 3. Popular TV Shows (/api/tv/collection)
-      // 4. Anime Collection (/api/anime/collection)
       final results = await Future.wait([
         ApiService.fetchMovieCollection(),
         ApiService.fetchMoviesByGenre(28),
@@ -53,6 +49,11 @@ class _HomeScreenState extends State<HomeScreen> {
           _trendingTv = results[2];
           _animeList = results[3];
           _loading = false;
+        });
+
+        // Wireless backend OTA update check
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          UpdateService.promptUpdateIfNeeded(context);
         });
       }
     } catch (e) {
