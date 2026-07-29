@@ -1,12 +1,32 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:video_player/video_player.dart';
 
 class VideoPlayerPage extends StatefulWidget {
   final String title;
-  final String url; // mp4 or HLS
-  const VideoPlayerPage({super.key, required this.title, required this.url});
+
+  /// Remote mp4 or HLS url. Ignored when [filePath] is set.
+  final String url;
+
+  /// Local file to play instead of [url] — used for offline downloads.
+  final String? filePath;
+
+  const VideoPlayerPage({
+    super.key,
+    required this.title,
+    this.url = '',
+    this.filePath,
+  }) : assert(url != '' || filePath != null, 'need a url or a filePath');
+
+  /// Plays a downloaded file from disk.
+  const VideoPlayerPage.file({
+    super.key,
+    required this.title,
+    required String path,
+  })  : filePath = path,
+        url = '';
 
   @override
   State<VideoPlayerPage> createState() => _VideoPlayerPageState();
@@ -16,17 +36,25 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
   late final VideoPlayerController _controller;
   bool _ready = false;
   bool _showUi = true;
+  String? _error;
   Timer? _hideTimer;
 
   @override
   void initState() {
     super.initState();
-    _controller = VideoPlayerController.networkUrl(Uri.parse(widget.url))
+    _controller = widget.filePath != null
+        ? VideoPlayerController.file(File(widget.filePath!))
+        : VideoPlayerController.networkUrl(Uri.parse(widget.url));
+    _controller
       ..setLooping(false)
       ..initialize().then((_) {
+        if (!mounted) return;
         setState(() => _ready = true);
         _controller.play();
         _kickAutoHide();
+      }).catchError((Object e) {
+        if (!mounted) return;
+        setState(() => _error = 'This file could not be played.');
       });
   }
 
@@ -68,18 +96,27 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
           child: Stack(
             children: [
               Center(
-                child: _ready
-                    ? AspectRatio(
-                        aspectRatio: _controller.value.aspectRatio == 0
-                            ? 16 / 9
-                            : _controller.value.aspectRatio,
-                        child: VideoPlayer(_controller),
+                child: _error != null
+                    ? Padding(
+                        padding: const EdgeInsets.all(24),
+                        child: Text(
+                          _error!,
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(color: Colors.white70, fontSize: 14),
+                        ),
                       )
-                    : const SizedBox(
-                        width: 48,
-                        height: 48,
-                        child: CircularProgressIndicator(),
-                      ),
+                    : _ready
+                        ? AspectRatio(
+                            aspectRatio: _controller.value.aspectRatio == 0
+                                ? 16 / 9
+                                : _controller.value.aspectRatio,
+                            child: VideoPlayer(_controller),
+                          )
+                        : const SizedBox(
+                            width: 48,
+                            height: 48,
+                            child: CircularProgressIndicator(),
+                          ),
               ),
               if (_showUi)
                 Positioned(
@@ -143,6 +180,24 @@ class _Controls extends StatefulWidget {
 }
 
 class _ControlsState extends State<_Controls> {
+  @override
+  void initState() {
+    super.initState();
+    // Without this the scrubber and the play/pause icon only repaint when the
+    // parent happens to rebuild.
+    widget.controller.addListener(_onTick);
+  }
+
+  @override
+  void dispose() {
+    widget.controller.removeListener(_onTick);
+    super.dispose();
+  }
+
+  void _onTick() {
+    if (mounted) setState(() {});
+  }
+
   String _format(Duration d) {
     final h = d.inHours;
     final m = d.inMinutes % 60;

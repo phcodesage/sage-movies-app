@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'dart:async';
+import 'package:sagemovies/data/studio_catalog.dart';
 import 'package:sagemovies/models/movie.dart';
 import 'package:sagemovies/screens/details_screen.dart';
+import 'package:sagemovies/screens/studio_movies_screen.dart';
 import 'package:sagemovies/services/api_service.dart';
 import 'package:sagemovies/widgets/poster_tile.dart';
 
@@ -24,16 +26,20 @@ class _SearchScreenState extends State<SearchScreen> {
   String _lastQuery = '';
   String? _selectedLetter;
 
-  final List<Map<String, String>> _popularPlatforms = [
-    {'name': 'Vivamax', 'url': 'https://image.tmdb.org/t/p/w92/149142.png'},
-    {'name': 'Netflix', 'url': 'https://image.tmdb.org/t/p/w92/wwemzKWXHqRERyuR2VvM1yA4225.png'},
-    {'name': 'Disney+', 'url': 'https://image.tmdb.org/t/p/w92/7xOCo2g1u4n6p425d0xQ.png'},
-    {'name': 'Prime Video', 'url': 'https://image.tmdb.org/t/p/w92/if1Q8Tewh688f28j5t66u2j3441.png'},
-    {'name': 'Apple TV+', 'url': 'https://image.tmdb.org/t/p/w92/6vB2F9c4e0p9G6j96j40j4.png'},
-    {'name': 'HBO Max', 'url': 'https://image.tmdb.org/t/p/w92/1DSpQ9G6537756f4d1e2.png'},
-    {'name': 'Paramount+', 'url': 'https://image.tmdb.org/t/p/w92/8342478f2441.png'},
-    {'name': 'Hulu', 'url': 'https://image.tmdb.org/t/p/w92/pqUtCleNUiTLLGsWyR62C92W67j.png'},
-  ];
+  /// Bundled logos from the shared catalog. The previous hardcoded TMDB URLs
+  /// were not valid image paths, so every chip rendered a broken-image icon.
+  final List<StudioEntry> _popularPlatforms = StudioCatalog.entries
+      .where((e) => const {
+            'vivamax',
+            'netflix',
+            'disney',
+            'prime',
+            'appletv',
+            'max',
+            'paramount',
+            'hulu',
+          }.contains(e.key))
+      .toList();
 
   final List<String> _genres = [
     'Action', 'Romance', 'Comedy', 'Horror', 'Sci-Fi', 'Drama', 'Anime', 'Adventure'
@@ -118,10 +124,32 @@ class _SearchScreenState extends State<SearchScreen> {
     _focusNode.requestFocus();
   }
 
-  void _onPlatformTap(String platformName) {
-    _controller.text = platformName;
+  void _onGenreTap(String genre) {
+    _controller.text = genre;
     _focusNode.unfocus();
-    _performSearch(platformName);
+    _performSearch(genre);
+  }
+
+  void _onPlatformTap(StudioEntry entry) {
+    _focusNode.unfocus();
+    // With a known company id, show the real catalogue. Without one, fall back
+    // to the old title search — TMDB matches titles, not companies, so this is
+    // imprecise but still better than nothing.
+    if (entry.companyId != null) {
+      Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => StudioMoviesScreen(
+            studioName: entry.displayName,
+            logoAsset: entry.asset,
+            logoUrl: '',
+            studioId: entry.companyId!.toString(),
+          ),
+        ),
+      );
+      return;
+    }
+    _controller.text = entry.displayName;
+    _performSearch(entry.displayName);
   }
 
   void _openDetails(Movie movie) {
@@ -200,13 +228,12 @@ class _SearchScreenState extends State<SearchScreen> {
         itemCount: _popularPlatforms.length,
         itemBuilder: (context, i) {
           final platform = _popularPlatforms[i];
-          final name = platform['name']!;
-          final url = platform['url']!;
+          final name = platform.displayName;
 
           return Padding(
             padding: const EdgeInsets.only(right: 8),
             child: InkWell(
-              onTap: () => _onPlatformTap(name),
+              onTap: () => _onPlatformTap(platform),
               borderRadius: BorderRadius.circular(20),
               child: Container(
                 padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
@@ -218,8 +245,8 @@ class _SearchScreenState extends State<SearchScreen> {
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Image.network(
-                      url,
+                    Image.asset(
+                      platform.asset,
                       width: 18,
                       height: 18,
                       fit: BoxFit.contain,
@@ -337,7 +364,7 @@ class _SearchScreenState extends State<SearchScreen> {
                   labelStyle: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold),
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
                   side: const BorderSide(color: Colors.white12),
-                  onPressed: () => _onPlatformTap(g),
+                  onPressed: () => _onGenreTap(g),
                 );
               }).toList(),
             ),

@@ -4,7 +4,9 @@ import 'package:sagemovies/screens/downloads_screen.dart';
 import 'package:sagemovies/screens/home_screen.dart';
 import 'package:sagemovies/screens/my_list_screen.dart';
 import 'package:sagemovies/screens/search_screen.dart';
+import 'package:sagemovies/services/download_service.dart';
 import 'package:sagemovies/services/preload_service.dart';
+import 'package:sagemovies/services/studio_service.dart';
 import 'package:sagemovies/theme.dart';
 import 'package:sagemovies/widgets/studio_bottom_bar.dart';
 
@@ -13,6 +15,8 @@ import 'package:unity_ads_plugin/unity_ads_plugin.dart';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await PreloadService.init();
+  await StudioService.init();
+  await DownloadService.init();
   UnityAds.init(
     gameId: '800108318',
     testMode: false,
@@ -66,11 +70,9 @@ class _MainScaffoldState extends State<_MainScaffold> {
       bottomNavigationBar: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          StudioBottomBar(
-            onStudioTap: (query) {
-              setState(() => _index = 1);
-            },
-          ),
+          // The bar pushes StudioMoviesScreen itself; switching tabs here as
+          // well used to strand the user on Search when they popped back.
+          const StudioBottomBar(),
           BottomNavigationBar(
             currentIndex: _index,
             onTap: (i) => setState(() => _index = i),

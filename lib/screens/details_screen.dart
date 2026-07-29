@@ -3,13 +3,19 @@ import 'package:flutter/services.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 import 'package:webview_flutter_android/webview_flutter_android.dart';
 import 'package:sagemovies/app_state.dart';
+import 'package:sagemovies/data/studio_catalog.dart';
+import 'package:sagemovies/models/download_item.dart';
 import 'package:sagemovies/models/movie.dart';
-import 'package:sagemovies/screens/player_screen.dart';
+import 'package:sagemovies/screens/video_player_page.dart';
+import 'package:sagemovies/services/download_service.dart';
 import 'package:sagemovies/screens/search_screen.dart';
 import 'package:sagemovies/screens/my_list_screen.dart';
 import 'package:sagemovies/screens/downloads_screen.dart';
 import 'package:sagemovies/screens/studio_movies_screen.dart';
 import 'package:sagemovies/services/api_service.dart';
+import 'package:sagemovies/services/pip_service.dart';
+import 'package:sagemovies/services/stream_sniffer_service.dart';
+import 'package:sagemovies/services/studio_service.dart';
 import 'package:sagemovies/services/toast_service.dart';
 import 'package:sagemovies/services/update_service.dart';
 import 'package:sagemovies/widgets/safe_cached_image.dart';
@@ -29,6 +35,16 @@ class _DetailsScreenState extends State<DetailsScreen> {
   bool _isPlaying = false;
   bool _isLoadingPlayer = false;
   bool _isVideoPlayingState = false;
+  /// The user's explicit intent. When true, autoplay retries must not fire.
+  bool _userPaused = false;
+  /// Last time the embed page reported real playback state over the JS channel.
+  /// While recent, channel reports win over our optimistic guesses.
+  DateTime? _lastChannelReport;
+  bool _pipSupported = false;
+  bool _isInPip = false;
+  /// False below API 26, where the WebViewClient cannot be wrapped — hide the
+  /// download button entirely rather than offering something that cannot work.
+  bool _downloadSupported = false;
   String _server = 'player.videasy.net';
   String _lang = 'en';
   bool _isDescExpanded = false;
@@ -91,11 +107,15 @@ class _DetailsScreenState extends State<DetailsScreen> {
       ..addJavaScriptChannel(
         'FlutterPlayerChannel',
         onMessageReceived: (JavaScriptMessage msg) {
+          // Only same-origin players ever reach us here. When they do, they are
+          // authoritative — record the time so optimistic writes stand down.
           if (msg.message == 'PLAYING') {
+            _lastChannelReport = DateTime.now();
             if (mounted && !_isVideoPlayingState) {
               setState(() => _isVideoPlayingState = true);
             }
           } else if (msg.message == 'PAUSED') {
+            _lastChannelReport = DateTime.now();
             if (mounted && _isVideoPlayingState) {
               setState(() => _isVideoPlayingState = false);
             }
@@ -105,14 +125,18 @@ class _DetailsScreenState extends State<DetailsScreen> {
       ..setNavigationDelegate(
         NavigationDelegate(
           onPageFinished: (String url) {
+            // Both retries are gated on _userPaused so a pause inside the first
+            // two seconds is not silently undone by the second timer.
             Future.delayed(const Duration(milliseconds: 800), () {
-              if (mounted && _isPlaying) {
+              if (mounted && _isPlaying && !_userPaused) {
                 _triggerAutoPlayScript();
+                _markPlaying();
               }
             });
             Future.delayed(const Duration(milliseconds: 2000), () {
-              if (mounted && _isPlaying) {
+              if (mounted && _isPlaying && !_userPaused) {
                 _triggerAutoPlayScript();
+                _markPlaying();
               }
             });
           },
@@ -195,9 +219,34 @@ class _DetailsScreenState extends State<DetailsScreen> {
 
     _precheckServers();
     _fetchFullDetails();
+    _initPip();
+    _initDownloads();
+  }
+
+  Future<void> _initDownloads() async {
+    final supported = await StreamSnifferService.isSupported();
+    if (mounted) setState(() => _downloadSupported = supported);
+  }
+
+  Future<void> _initPip() async {
+    final supported = await PipService.isSupported();
+    if (!mounted) return;
+    setState(() => _pipSupported = supported);
+    if (!supported) return;
+    PipService.setModeListener((inPip) {
+      if (mounted) setState(() => _isInPip = inPip);
+    });
+  }
+
+  @override
+  void dispose() {
+    PipService.setModeListener(null);
+    PipService.setPlaybackActive(false);
+    super.dispose();
   }
 
   String? _studioLogoPath;
+  StudioEntry? _studioEntry;
   List<Map<String, dynamic>> _studioCompanies = [];
 
   Future<void> _fetchFullDetails() async {
@@ -207,26 +256,55 @@ class _DetailsScreenState extends State<DetailsScreen> {
 
     if (details != null) {
       final comps = details['production_companies'] as List?;
-      String sName = '';
+
+      // Prefer a recognizable registered studio. Falling back to
+      // production_companies[0] surfaces arbitrary financiers, and for TV it
+      // misses the network entirely (House of the Dragon's first company is
+      // "Revolution Sun Studios", not HBO).
+      final entry = StudioService.resolveFromDetails(details, mediaType: type);
+
+      String sName = entry?.displayName ?? '';
       String? sLogo;
 
       if (comps != null && comps.isNotEmpty) {
-        final viva = comps.firstWhere(
-          (c) => (c['name'] ?? '').toString().toLowerCase().contains('vivamax'),
-          orElse: () => comps[0],
-        );
-        sName = viva['name'] ?? '';
-        sLogo = viva['logo_path'] as String?;
+        Map<String, dynamic>? source;
+        if (entry != null) {
+          for (final c in comps) {
+            if (StudioCatalog.matchByName((c as Map)['name'] as String?)?.key == entry.key) {
+              source = Map<String, dynamic>.from(c);
+              break;
+            }
+          }
+        }
+        source ??= Map<String, dynamic>.from(comps[0] as Map);
+        sLogo = source['logo_path'] as String?;
+        if (sName.isEmpty) sName = (source['name'] ?? '').toString();
+      }
+
+      if (sLogo == null && entry != null) {
+        final networks = details['networks'] as List?;
+        if (networks != null) {
+          for (final n in networks) {
+            final match = StudioCatalog.matchByNetworkId((n as Map)['id'] as int?) ??
+                StudioCatalog.matchByName(n['name'] as String?);
+            if (match?.key == entry.key) {
+              sLogo = n['logo_path'] as String?;
+              break;
+            }
+          }
+        }
       }
 
       setState(() {
         _fullDetails = details;
         _studioName = sName;
+        _studioEntry = entry;
         _studioLogoPath = sLogo;
         _studioCompanies = comps != null ? List<Map<String, dynamic>>.from(comps) : [];
       });
 
-      final studioId = comps != null && comps.isNotEmpty ? comps[0]['id'] as int? : null;
+      final studioId = entry?.companyId ??
+          (comps != null && comps.isNotEmpty ? comps[0]['id'] as int? : null);
       if (studioId != null) {
         final studioRes = await ApiService.fetchMoviesByStudio(studioId);
         if (mounted && studioRes.isNotEmpty) {
@@ -286,15 +364,30 @@ class _DetailsScreenState extends State<DetailsScreen> {
 
     final targetUrl = url;
 
-    // 1. Mount WebViewWidget into the widget tree FIRST
+    // Any previously sniffed stream belongs to the old page.
+    StreamSnifferService.reset();
+
+    // 1. Mount WebViewWidget into the widget tree FIRST.
+    // Autoplay is force-triggered from onPageFinished, so "playing" is the
+    // correct optimistic assumption from the moment the player mounts.
     setState(() {
       _embedUrl = targetUrl;
       _isPlaying = true;
       _isLoadingPlayer = true;
+      _isVideoPlayingState = true;
+      _userPaused = false;
+      _lastChannelReport = null;
     });
+
+    // Lets the activity auto-PiP on home-press, but only while we are playing.
+    PipService.setPlaybackActive(true);
 
     // 2. Short delay for Android platform view to attach to native hierarchy
     await Future.delayed(const Duration(milliseconds: 50));
+
+    // 3. Wrap the native WebViewClient before the page loads, so the media
+    // requests the embed makes are visible to the downloader.
+    await StreamSnifferService.attach(_controller);
 
     // 3. Load video source URL on attached WebView
     try {
@@ -402,37 +495,219 @@ class _DetailsScreenState extends State<DetailsScreen> {
     ''');
   }
 
-  void _togglePlayPause() {
-    final newState = !_isVideoPlayingState;
-    if (mounted) setState(() => _isVideoPlayingState = newState);
-    _triggerAutoPlayScript();
-    _controller.runJavaScript('''
+  /// Four states, because a bare disabled button reads as broken: we cannot
+  /// offer a download until the player has actually fetched a media URL we can
+  /// replay, and that never happens for some servers.
+  Widget _buildDownloadButton() {
+    return ValueListenableBuilder<StreamHit?>(
+      valueListenable: StreamSnifferService.lastHit,
+      builder: (context, hit, _) {
+        return ValueListenableBuilder<List<DownloadItem>>(
+          valueListenable: DownloadService.items,
+          builder: (context, _, __) {
+            final existing = DownloadService.find(widget.movie.id);
+
+            if (existing != null && existing.status == DownloadStatus.downloading) {
+              final pct = (existing.progress * 100).toInt();
+              return Column(
+                children: [
+                  SizedBox(
+                    width: double.infinity,
+                    child: OutlinedButton.icon(
+                      style: _downloadButtonStyle(),
+                      onPressed: () => DownloadService.cancel(widget.movie.id),
+                      icon: const Icon(Icons.close, size: 18),
+                      label: Text(
+                        'DOWNLOADING $pct%  •  TAP TO CANCEL',
+                        style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 12),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(3),
+                    child: LinearProgressIndicator(
+                      value: existing.progress > 0 ? existing.progress : null,
+                      minHeight: 4,
+                      backgroundColor: Colors.white10,
+                      valueColor: const AlwaysStoppedAnimation(Color(0xFFE50914)),
+                    ),
+                  ),
+                ],
+              );
+            }
+
+            if (existing != null && existing.status == DownloadStatus.complete) {
+              return SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  style: _downloadButtonStyle(),
+                  onPressed: () {
+                    Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (_) => VideoPlayerPage.file(
+                          title: existing.title,
+                          path: existing.filePath,
+                        ),
+                      ),
+                    );
+                  },
+                  icon: const Icon(Icons.check_circle, size: 18, color: Color(0xFF10B981)),
+                  label: Text(
+                    'DOWNLOADED ${existing.quality.label}  •  WATCH OFFLINE',
+                    style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 12),
+                  ),
+                ),
+              );
+            }
+
+            final ready = hit != null;
+            return SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                style: _downloadButtonStyle(),
+                onPressed: ready ? () => _startDownload(hit) : null,
+                icon: const Icon(Icons.download, size: 18),
+                label: Text(
+                  ready ? 'DOWNLOAD' : 'DOWNLOAD  (START PLAYBACK FIRST)',
+                  style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 12),
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  ButtonStyle _downloadButtonStyle() => OutlinedButton.styleFrom(
+        foregroundColor: Colors.white,
+        disabledForegroundColor: Colors.white38,
+        padding: const EdgeInsets.symmetric(vertical: 12),
+        side: const BorderSide(color: Colors.white24),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+      );
+
+  Future<void> _startDownload(StreamHit hit) async {
+    // Show quality picker bottom sheet first.
+    final quality = await showModalBottomSheet<VideoQuality>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => _QualityPickerSheet(
+        title: widget.movie.title,
+        isHls: hit.isPlaylist,
+      ),
+    );
+
+    // User dismissed without choosing.
+    if (quality == null) return;
+    if (!mounted) return;
+
+    try {
+      await DownloadService.start(widget.movie, hit, quality: quality);
+      if (mounted) {
+        ToastService.showSuccess(
+          context,
+          '"${widget.movie.title}" (${quality.label}) saved for offline viewing',
+          title: 'Download Complete',
+        );
+      }
+    } on DownloadException catch (e) {
+      if (mounted) {
+        ToastService.showInfo(context, e.message, title: 'Download Failed');
+      }
+    }
+  }
+
+  /// Optimistically flag playback as running, unless the embed page has told us
+  /// otherwise recently — a real report always outranks a guess.
+  void _markPlaying() {
+    final report = _lastChannelReport;
+    if (report != null && DateTime.now().difference(report) < const Duration(seconds: 3)) {
+      return;
+    }
+    if (mounted && !_isVideoPlayingState) {
+      setState(() => _isVideoPlayingState = true);
+    }
+  }
+
+  static const String _kPlayJs = '''
       (function() {
-        function tryMedia(win) {
+        function tryPlay(win) {
           try {
-            var doc = win.document;
-            var v = doc.querySelector('video');
+            var v = win.document.querySelector('video');
             if (v) {
-              if (v.paused) {
-                v.play();
-                if (window.FlutterPlayerChannel) window.FlutterPlayerChannel.postMessage('PLAYING');
-              } else {
-                v.pause();
-                if (window.FlutterPlayerChannel) window.FlutterPlayerChannel.postMessage('PAUSED');
-              }
+              var p = v.play();
+              if (p && p.catch) { p.catch(function(){}); }
+              if (window.FlutterPlayerChannel) window.FlutterPlayerChannel.postMessage('PLAYING');
               return true;
             }
           } catch(e) {}
           try {
             for (var i = 0; i < win.frames.length; i++) {
-              if (tryMedia(win.frames[i])) return true;
+              if (tryPlay(win.frames[i])) return true;
             }
           } catch(e) {}
           return false;
         }
-        tryMedia(window);
+        tryPlay(window);
       })();
-    ''');
+    ''';
+
+  static const String _kPauseJs = '''
+      (function() {
+        function tryPause(win) {
+          try {
+            var v = win.document.querySelector('video');
+            if (v) {
+              v.pause();
+              if (window.FlutterPlayerChannel) window.FlutterPlayerChannel.postMessage('PAUSED');
+              return true;
+            }
+          } catch(e) {}
+          try {
+            for (var i = 0; i < win.frames.length; i++) {
+              if (tryPause(win.frames[i])) return true;
+            }
+          } catch(e) {}
+          return false;
+        }
+        tryPause(window);
+      })();
+    ''';
+
+  /// Tear the player down and reset every playback flag together, so none of
+  /// them leak into the next session.
+  void _stopPlayback() {
+    PipService.setPlaybackActive(false);
+    if (!mounted) return;
+    setState(() {
+      _isPlaying = false;
+      _isVideoPlayingState = false;
+      _userPaused = false;
+      _lastChannelReport = null;
+    });
+  }
+
+  void _togglePlayPause() {
+    final wantPlay = !_isVideoPlayingState;
+    if (mounted) {
+      setState(() {
+        _isVideoPlayingState = wantPlay;
+        _userPaused = !wantPlay;
+      });
+    }
+
+    if (wantPlay) {
+      // Mass-clicking play targets is only acceptable when the goal IS to play.
+      _triggerAutoPlayScript();
+      _controller.runJavaScript(_kPlayJs);
+    } else {
+      // Never call _triggerAutoPlayScript here — it clicks every button on the
+      // page and would restart the very playback we are trying to stop.
+      _controller.runJavaScript(_kPauseJs);
+    }
   }
 
   void _seekVideo(int seconds) {
@@ -542,13 +817,26 @@ class _DetailsScreenState extends State<DetailsScreen> {
       drawerEnableOpenDragGesture: true,
       drawer: _buildLeftNavDrawer(context),
       body: SafeArea(
-        child: Column(
+        child: LayoutBuilder(builder: (context, constraints) {
+          // In PiP the whole activity surface is captured, so the player takes
+          // the full height and every other child goes Offstage. Only this
+          // height changes — the widget chain down to WebViewWidget stays
+          // identical, so the Android platform view is never remounted.
+          final playerHeight =
+              _isInPip ? constraints.maxHeight : constraints.maxWidth * 9 / 16;
+
+          return Column(
           children: [
             // 1. STICKY TOP PLAYER / BACKDROP (Stays fixed when scrolling lower details)
-            Stack(
+            // Width is explicit: Column gives loose cross-axis constraints and
+            // every child of the Stack below is positioned, so without it the
+            // Stack would collapse to zero width.
+            SizedBox(
+              width: constraints.maxWidth,
+              height: playerHeight,
+              child: Stack(
               children: [
-                AspectRatio(
-                  aspectRatio: 16 / 9,
+                Positioned.fill(
                   child: Container(
                     color: Colors.black,
                     child: _isPlaying
@@ -562,16 +850,15 @@ class _DetailsScreenState extends State<DetailsScreen> {
                                 const Center(
                                   child: CircularProgressIndicator(color: Color(0xFFE50914)),
                                 ),
-                              Positioned(
-                                top: 10,
-                                right: 10,
-                                child: IconButton(
-                                  icon: const Icon(Icons.close, color: Colors.white, size: 26),
-                                  onPressed: () {
-                                    setState(() => _isPlaying = false);
-                                  },
+                              if (!_isInPip)
+                                Positioned(
+                                  top: 10,
+                                  right: 10,
+                                  child: IconButton(
+                                    icon: const Icon(Icons.close, color: Colors.white, size: 26),
+                                    onPressed: _stopPlayback,
+                                  ),
                                 ),
-                              ),
                             ],
                           )
                         : Stack(
@@ -639,41 +926,43 @@ class _DetailsScreenState extends State<DetailsScreen> {
                 ),
 
                 // Top Left Action Bar: Draggable Menu & Back Buttons
-                Positioned(
-                  top: 10,
-                  left: 10,
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Container(
-                        decoration: const BoxDecoration(
-                          color: Colors.black54,
-                          shape: BoxShape.circle,
+                if (!_isInPip)
+                  Positioned(
+                    top: 10,
+                    left: 10,
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Container(
+                          decoration: const BoxDecoration(
+                            color: Colors.black54,
+                            shape: BoxShape.circle,
+                          ),
+                          child: IconButton(
+                            icon: const Icon(Icons.menu, color: Colors.white),
+                            onPressed: () => _scaffoldKey.currentState?.openDrawer(),
+                          ),
                         ),
-                        child: IconButton(
-                          icon: const Icon(Icons.menu, color: Colors.white),
-                          onPressed: () => _scaffoldKey.currentState?.openDrawer(),
+                        const SizedBox(width: 8),
+                        Container(
+                          decoration: const BoxDecoration(
+                            color: Colors.black54,
+                            shape: BoxShape.circle,
+                          ),
+                          child: IconButton(
+                            icon: const Icon(Icons.arrow_back, color: Colors.white),
+                            onPressed: () => Navigator.of(context).pop(),
+                          ),
                         ),
-                      ),
-                      const SizedBox(width: 8),
-                      Container(
-                        decoration: const BoxDecoration(
-                          color: Colors.black54,
-                          shape: BoxShape.circle,
-                        ),
-                        child: IconButton(
-                          icon: const Icon(Icons.arrow_back, color: Colors.white),
-                          onPressed: () => Navigator.of(context).pop(),
-                        ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
-                ),
               ],
+            ),
             ),
 
             // 2. STICKY NATIVE PLAYER CONTROL BAR (Directly below video when playing)
-            if (_isPlaying)
+            if (_isPlaying && !_isInPip)
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                 color: const Color(0xFF16161B),
@@ -713,15 +1002,25 @@ class _DetailsScreenState extends State<DetailsScreen> {
                       icon: const Icon(Icons.forward_10, size: 18),
                       label: const Text('+10s', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
                     ),
+                    if (_pipSupported)
+                      IconButton(
+                        tooltip: 'Picture in picture',
+                        onPressed: PipService.enter,
+                        icon: const Icon(Icons.picture_in_picture_alt, size: 20, color: Colors.white),
+                      ),
                   ],
                 ),
               ),
 
             // 3. SCROLLABLE DETAILS & RECOMMENDATIONS CONTENT
-            const SizedBox(height: 8),
+            SizedBox(height: _isInPip ? 0 : 8),
 
             // 3. FIXED HEADER TITLE CARD (Stays fixed at top below player)
-            Padding(
+            // Offstage rather than removed: it keeps state and takes zero space,
+            // so the full-height player above cannot overflow the Column.
+            Offstage(
+              offstage: _isInPip,
+              child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16),
               child: Column(
                 children: [
@@ -849,13 +1148,26 @@ class _DetailsScreenState extends State<DetailsScreen> {
                                       child: Row(
                                         mainAxisSize: MainAxisSize.min,
                                         children: [
-                                          if (_studioLogoPath != null && _studioLogoPath!.isNotEmpty) ...[
-                                            Image.network(
-                                              'https://image.tmdb.org/t/p/w200$_studioLogoPath',
+                                          // No white tint here: srcIn-blending an
+                                          // opaque JPG logo renders a blank
+                                          // white rectangle.
+                                          if (_studioEntry != null) ...[
+                                            Image.asset(
+                                              _studioEntry!.asset,
                                               height: 12,
                                               fit: BoxFit.contain,
-                                              color: Colors.white,
                                               errorBuilder: (context, error, stack) =>
+                                                  const SizedBox.shrink(),
+                                            ),
+                                            const SizedBox(width: 4),
+                                          ] else if (_studioLogoPath != null &&
+                                              _studioLogoPath!.isNotEmpty) ...[
+                                            SafeCachedImage(
+                                              imageUrl:
+                                                  'https://image.tmdb.org/t/p/w200$_studioLogoPath',
+                                              height: 12,
+                                              fit: BoxFit.contain,
+                                              errorWidget: (context, url, error) =>
                                                   const SizedBox.shrink(),
                                             ),
                                             const SizedBox(width: 4),
@@ -907,14 +1219,21 @@ class _DetailsScreenState extends State<DetailsScreen> {
                       ),
                     ),
                   ),
+                  if (_downloadSupported) ...[
+                    const SizedBox(height: 8),
+                    _buildDownloadButton(),
+                  ],
                 ],
               ),
             ),
+            ),
 
-            const SizedBox(height: 8),
+            SizedBox(height: _isInPip ? 0 : 8),
 
             // 4. SCROLLABLE DETAILS CONTENT (Episodes, Stream Settings, Storyline, Cast & Recommendations)
             Expanded(
+              child: Offstage(
+              offstage: _isInPip,
               child: RefreshIndicator(
                 color: const Color(0xFFE50914),
                 backgroundColor: const Color(0xFF141414),
@@ -1449,14 +1768,18 @@ class _DetailsScreenState extends State<DetailsScreen> {
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
                                   if (logo != null && logo.isNotEmpty) ...[
-                                    Image.network(
-                                      'https://image.tmdb.org/t/p/w200$logo',
+                                    // Untinted: many TMDB logos are opaque JPGs
+                                    // that a white tint flattens completely.
+                                    SafeCachedImage(
+                                      imageUrl: 'https://image.tmdb.org/t/p/w200$logo',
                                       height: 16,
                                       fit: BoxFit.contain,
-                                      color: Colors.white,
-                                      errorBuilder: (context, error, stack) =>
+                                      errorWidget: (context, url, error) =>
                                           const Icon(Icons.business, size: 14, color: Colors.white70),
                                     ),
+                                    const SizedBox(width: 6),
+                                  ] else ...[
+                                    const Icon(Icons.business, size: 14, color: Colors.white70),
                                     const SizedBox(width: 6),
                                   ],
                                   Text(
@@ -1479,9 +1802,11 @@ class _DetailsScreenState extends State<DetailsScreen> {
                 ),
               ),
             ),
+            ),
           ),
         ],
-      ),
+      );
+        }),
     ),
   );
 }
@@ -1600,55 +1925,40 @@ class _DetailsScreenState extends State<DetailsScreen> {
               style: TextStyle(color: Colors.white38, fontSize: 11, fontWeight: FontWeight.w900, letterSpacing: 1.2),
             ),
           ),
-          ListTile(
-            leading: const Icon(Icons.movie, color: Color(0xFFE50914)),
-            title: const Text('Vivamax', style: TextStyle(color: Colors.white)),
-            onTap: () {
-              Navigator.of(context).pop();
-              Navigator.of(context).push(
-                MaterialPageRoute(
-                  builder: (_) => const StudioMoviesScreen(
-                    studioName: 'Vivamax',
-                    logoUrl: 'https://image.tmdb.org/t/p/w92/25oYoXHsfWYlddAzJSBReajN3BM.png',
-                  ),
-                ),
-              );
-            },
-          ),
-          ListTile(
-            leading: const Icon(Icons.tv, color: Color(0xFFE50914)),
-            title: const Text('Netflix', style: TextStyle(color: Colors.white)),
-            onTap: () {
-              Navigator.of(context).pop();
-              Navigator.of(context).push(
-                MaterialPageRoute(
-                  builder: (_) => const StudioMoviesScreen(
-                    studioName: 'Netflix',
-                    logoUrl: 'https://image.tmdb.org/t/p/w92/pbpMk2JmcoNnQwx5JGpXngfoWtp.jpg',
-                  ),
-                ),
-              );
-            },
-          ),
-          ListTile(
-            leading: const Icon(Icons.star, color: Color(0xFFE50914)),
-            title: const Text('Marvel', style: TextStyle(color: Colors.white)),
-            onTap: () {
-              Navigator.of(context).pop();
-              Navigator.of(context).push(
-                MaterialPageRoute(
-                  builder: (_) => const StudioMoviesScreen(
-                    studioName: 'Marvel',
-                    logoUrl: 'https://image.tmdb.org/t/p/w92/hUzeosd33nzE5MStB42PioTJw15.png',
-                  ),
-                ),
-              );
-            },
-          ),
+          for (final key in const ['vivamax', 'netflix', 'marvel'])
+            if (StudioCatalog.byKey(key) != null)
+              _buildStudioDrawerTile(context, StudioCatalog.byKey(key)!),
         ],
       ),
     );
   }
+}
+
+Widget _buildStudioDrawerTile(BuildContext context, StudioEntry entry) {
+  return ListTile(
+    leading: Image.asset(
+      entry.asset,
+      width: 24,
+      height: 24,
+      fit: BoxFit.contain,
+      errorBuilder: (context, error, stack) =>
+          const Icon(Icons.movie, color: Color(0xFFE50914)),
+    ),
+    title: Text(entry.displayName, style: const TextStyle(color: Colors.white)),
+    onTap: () {
+      Navigator.of(context).pop();
+      Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => StudioMoviesScreen(
+            studioName: entry.displayName,
+            logoAsset: entry.asset,
+            logoUrl: '',
+            studioId: entry.companyId?.toString(),
+          ),
+        ),
+      );
+    },
+  );
 }
 
 class _SkippableAdDialog extends StatefulWidget {
@@ -1787,6 +2097,241 @@ class _SkippableAdDialogState extends State<_SkippableAdDialog> {
               ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Quality picker bottom sheet
+// ---------------------------------------------------------------------------
+
+class _QualityPickerSheet extends StatelessWidget {
+  final String title;
+
+  /// When false the stream is a progressive MP4 — resolution cannot be chosen,
+  /// but we still surface the sheet so users aren't confused by no choice.
+  final bool isHls;
+
+  const _QualityPickerSheet({required this.title, required this.isHls});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: const BoxDecoration(
+        color: Color(0xFF141419),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // Handle bar
+          Container(
+            margin: const EdgeInsets.only(top: 12, bottom: 8),
+            width: 40,
+            height: 4,
+            decoration: BoxDecoration(
+              color: Colors.white24,
+              borderRadius: BorderRadius.circular(2),
+            ),
+          ),
+
+          // Header
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 8, 20, 4),
+            child: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFE50914).withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: const Icon(Icons.high_quality_rounded, color: Color(0xFFE50914), size: 22),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'Download Quality',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      Text(
+                        title,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(color: Colors.white54, fontSize: 12),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+          const Padding(
+            padding: EdgeInsets.symmetric(horizontal: 20),
+            child: Divider(color: Colors.white12),
+          ),
+
+          if (!isHls)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 4, 20, 8),
+              child: Row(
+                children: const [
+                  Icon(Icons.info_outline, color: Colors.amber, size: 14),
+                  SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      'This stream is a direct video file. The quality choice sets a label; actual resolution is determined by the server.',
+                      style: TextStyle(color: Colors.amber, fontSize: 11, height: 1.4),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+
+          // Quality tiles
+          _QualityTile(
+            quality: VideoQuality.high,
+            icon: Icons.hd_rounded,
+            iconColor: const Color(0xFF3B82F6),
+            estimatedSize: '700 MB – 2 GB',
+            onTap: (q) => Navigator.of(context).pop(q),
+          ),
+          _QualityTile(
+            quality: VideoQuality.medium,
+            icon: Icons.sd_rounded,
+            iconColor: const Color(0xFF10B981),
+            estimatedSize: '300 – 700 MB',
+            onTap: (q) => Navigator.of(context).pop(q),
+          ),
+          _QualityTile(
+            quality: VideoQuality.low,
+            icon: Icons.signal_cellular_alt_1_bar_rounded,
+            iconColor: Colors.white54,
+            estimatedSize: '100 – 300 MB',
+            onTap: (q) => Navigator.of(context).pop(q),
+          ),
+
+          const SizedBox(height: 8),
+
+          // Cancel
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 20),
+            child: SizedBox(
+              width: double.infinity,
+              child: TextButton(
+                onPressed: () => Navigator.of(context).pop(),
+                style: TextButton.styleFrom(
+                  foregroundColor: Colors.white54,
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                ),
+                child: const Text('Cancel'),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _QualityTile extends StatelessWidget {
+  final VideoQuality quality;
+  final IconData icon;
+  final Color iconColor;
+  final String estimatedSize;
+  final void Function(VideoQuality) onTap;
+
+  const _QualityTile({
+    required this.quality,
+    required this.icon,
+    required this.iconColor,
+    required this.estimatedSize,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(12),
+          onTap: () => onTap(quality),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+            decoration: BoxDecoration(
+              color: const Color(0xFF1E1E26),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: Colors.white10),
+            ),
+            child: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: iconColor.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Icon(icon, color: iconColor, size: 20),
+                ),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Text(
+                            quality.label,
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 15,
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: iconColor.withValues(alpha: 0.15),
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                            child: Text(
+                              quality.description,
+                              style: TextStyle(
+                                color: iconColor,
+                                fontSize: 10,
+                                fontWeight: FontWeight.w700,
+                                letterSpacing: 0.3,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        '~$estimatedSize per 90-min title',
+                        style: const TextStyle(color: Colors.white38, fontSize: 11),
+                      ),
+                    ],
+                  ),
+                ),
+                const Icon(Icons.chevron_right_rounded, color: Colors.white24, size: 20),
+              ],
+            ),
+          ),
         ),
       ),
     );

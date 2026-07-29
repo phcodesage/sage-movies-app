@@ -4,17 +4,23 @@ import 'package:sagemovies/screens/details_screen.dart';
 import 'package:sagemovies/services/api_service.dart';
 import 'package:sagemovies/services/preload_service.dart';
 import 'package:sagemovies/widgets/poster_tile.dart';
+import 'package:sagemovies/widgets/safe_cached_image.dart';
 
 class StudioMoviesScreen extends StatefulWidget {
   final String studioName;
   final String logoUrl;
   final String? studioId;
 
+  /// Bundled logo from assets/studios/, preferred over [logoUrl] when present
+  /// so the header renders instantly and offline.
+  final String? logoAsset;
+
   const StudioMoviesScreen({
     super.key,
     required this.studioName,
     required this.logoUrl,
     this.studioId,
+    this.logoAsset,
   });
 
   @override
@@ -81,15 +87,28 @@ class _StudioMoviesScreenState extends State<StudioMoviesScreen> {
         elevation: 0,
         title: Row(
           children: [
-            if (widget.logoUrl.isNotEmpty) ...[
+            if (widget.logoAsset != null) ...[
               ClipRRect(
                 borderRadius: BorderRadius.circular(4),
-                child: Image.network(
-                  widget.logoUrl,
+                child: Image.asset(
+                  widget.logoAsset!,
                   width: 24,
                   height: 24,
                   fit: BoxFit.contain,
                   errorBuilder: (context, error, stack) =>
+                      const Icon(Icons.movie_filter, color: Color(0xFFE50914), size: 20),
+                ),
+              ),
+              const SizedBox(width: 10),
+            ] else if (widget.logoUrl.isNotEmpty) ...[
+              ClipRRect(
+                borderRadius: BorderRadius.circular(4),
+                child: SafeCachedImage(
+                  imageUrl: widget.logoUrl,
+                  width: 24,
+                  height: 24,
+                  fit: BoxFit.contain,
+                  errorWidget: (context, url, error) =>
                       const Icon(Icons.movie_filter, color: Color(0xFFE50914), size: 20),
                 ),
               ),
@@ -172,10 +191,7 @@ class _StudioMoviesScreenState extends State<StudioMoviesScreen> {
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
                                   Expanded(
-                                    child: PosterTile(
-                                      movie: movie,
-                                      studioName: widget.studioName,
-                                    ),
+                                    child: PosterTile(movie: movie),
                                   ),
                                   const SizedBox(height: 6),
                                   Text(

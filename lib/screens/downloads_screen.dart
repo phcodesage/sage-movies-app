@@ -1,39 +1,12 @@
 import 'package:flutter/material.dart';
+import 'package:sagemovies/models/download_item.dart';
+import 'package:sagemovies/screens/video_player_page.dart';
+import 'package:sagemovies/services/download_service.dart';
 import 'package:sagemovies/services/toast_service.dart';
+import 'package:sagemovies/widgets/safe_cached_image.dart';
 
-class DownloadsScreen extends StatefulWidget {
+class DownloadsScreen extends StatelessWidget {
   const DownloadsScreen({super.key});
-
-  @override
-  State<DownloadsScreen> createState() => _DownloadsScreenState();
-}
-
-class _DownloadsScreenState extends State<DownloadsScreen> {
-  bool _smartDownloadsEnabled = true;
-  bool _hasStoragePermission = true;
-  final List<Map<String, String>> _downloads = [];
-
-  void _requestStoragePermission() {
-    setState(() {
-      _hasStoragePermission = true;
-    });
-    ToastService.showSuccess(
-      context,
-      'Storage permission granted for offline downloads.',
-      title: 'Permission Granted',
-    );
-  }
-
-  void _clearAllDownloads() {
-    if (_downloads.isEmpty) return;
-    final count = _downloads.length;
-    setState(() => _downloads.clear());
-    ToastService.showInfo(
-      context,
-      'Cleared $count downloaded item${count > 1 ? 's' : ''}',
-      title: 'Downloads Cleared',
-    );
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -44,42 +17,47 @@ class _DownloadsScreenState extends State<DownloadsScreen> {
         elevation: 0,
         title: const Text('Downloads'),
       ),
-      body: ListView(
-        padding: const EdgeInsets.all(16),
-        children: [
-          _buildSmartDownloadsHeader(),
-          const SizedBox(height: 16),
-          _buildPermissionAndStorageCard(),
-          const SizedBox(height: 20),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      // The screens live in an IndexedStack, so this page is built once and kept
+      // alive — it has to listen for changes rather than read once in initState.
+      body: ValueListenableBuilder<List<DownloadItem>>(
+        valueListenable: DownloadService.items,
+        builder: (context, downloads, _) {
+          return ListView(
+            padding: const EdgeInsets.all(16),
             children: [
-              Text(
-                'Downloaded Content (${_downloads.length})',
-                style: const TextStyle(
-                  fontWeight: FontWeight.bold,
-                  fontSize: 16,
-                  color: Colors.white,
-                ),
+              _buildExperimentalNotice(),
+              const SizedBox(height: 20),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    'Downloaded Content (${downloads.length})',
+                    style: const TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 16,
+                      color: Colors.white,
+                    ),
+                  ),
+                  if (downloads.isNotEmpty)
+                    TextButton(
+                      onPressed: () => _confirmClearAll(context, downloads.length),
+                      child: const Text('Clear All', style: TextStyle(color: Colors.redAccent)),
+                    ),
+                ],
               ),
-              if (_downloads.isNotEmpty)
-                TextButton(
-                  onPressed: _clearAllDownloads,
-                  child: const Text('Clear All', style: TextStyle(color: Colors.redAccent)),
-                ),
+              const SizedBox(height: 8),
+              if (downloads.isEmpty)
+                _buildEmptyState()
+              else
+                ...downloads.map((item) => _DownloadTile(item: item)),
             ],
-          ),
-          const SizedBox(height: 8),
-          if (_downloads.isEmpty)
-            _buildEmptyState()
-          else
-            ..._downloads.map((item) => _buildDownloadTile(item)),
-        ],
+          );
+        },
       ),
     );
   }
 
-  Widget _buildSmartDownloadsHeader() {
+  Widget _buildExperimentalNotice() {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -98,113 +76,23 @@ class _DownloadsScreenState extends State<DownloadsScreen> {
             child: const Icon(Icons.download_for_offline_rounded, color: Color(0xFF0071EB), size: 24),
           ),
           const SizedBox(width: 14),
-          Expanded(
+          const Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text(
-                  'Smart Downloads',
+                Text(
+                  'Offline Downloads (Experimental)',
                   style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Colors.white),
                 ),
-                const SizedBox(height: 2),
+                SizedBox(height: 2),
                 Text(
-                  _smartDownloadsEnabled
-                      ? 'Auto-deletes watched titles & saves offline space'
-                      : 'Smart downloads paused',
-                  style: const TextStyle(color: Colors.white54, fontSize: 12),
+                  'Start playback on a title, then tap Download. Some servers '
+                  'block saving and will report an error.',
+                  style: TextStyle(color: Colors.white54, fontSize: 12, height: 1.35),
                 ),
               ],
             ),
           ),
-          Switch(
-            value: _smartDownloadsEnabled,
-            activeColor: const Color(0xFFE50914),
-            onChanged: (v) {
-              setState(() => _smartDownloadsEnabled = v);
-              ToastService.showInfo(
-                context,
-                v ? 'Smart downloads enabled' : 'Smart downloads paused',
-              );
-            },
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildPermissionAndStorageCard() {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: const Color(0xFF16161B),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: const Color(0xFF26262D)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Row(
-                children: [
-                  Icon(
-                    _hasStoragePermission ? Icons.folder_special_rounded : Icons.folder_off_rounded,
-                    color: _hasStoragePermission ? const Color(0xFFE50914) : Colors.amber,
-                    size: 18,
-                  ),
-                  const SizedBox(width: 8),
-                  const Text(
-                    'Storage Permission',
-                    style: TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.bold),
-                  ),
-                ],
-              ),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                decoration: BoxDecoration(
-                  color: _hasStoragePermission
-                      ? const Color(0xFF10B981).withOpacity(0.15)
-                      : Colors.amber.withOpacity(0.15),
-                  borderRadius: BorderRadius.circular(6),
-                ),
-                child: Text(
-                  _hasStoragePermission ? 'ALLOWED' : 'ACTION NEEDED',
-                  style: TextStyle(
-                    color: _hasStoragePermission ? const Color(0xFF10B981) : Colors.amber,
-                    fontSize: 10,
-                    fontWeight: FontWeight.w900,
-                  ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 10),
-          if (!_hasStoragePermission) ...[
-            const Text(
-              'Grant storage access to save movie streams for offline viewing.',
-              style: TextStyle(color: Colors.white54, fontSize: 12),
-            ),
-            const SizedBox(height: 10),
-            ElevatedButton.icon(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFFE50914),
-                foregroundColor: Colors.white,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-              ),
-              onPressed: _requestStoragePermission,
-              icon: const Icon(Icons.security, size: 16),
-              label: const Text('Grant Permission'),
-            ),
-          ] else ...[
-            const Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text('Device Path', style: TextStyle(color: Colors.white54, fontSize: 11)),
-                Text('/storage/emulated/0/SageMovies', style: TextStyle(color: Colors.white38, fontSize: 11)),
-              ],
-            ),
-          ],
         ],
       ),
     );
@@ -230,7 +118,7 @@ class _DownloadsScreenState extends State<DownloadsScreen> {
           ),
           const SizedBox(height: 6),
           const Text(
-            'Download your favorite movies & series so you can watch offline on the go.',
+            'Open a title, press play, then tap Download to save it for offline viewing.',
             textAlign: TextAlign.center,
             style: TextStyle(color: Colors.white54, fontSize: 12, height: 1.4),
           ),
@@ -239,7 +127,80 @@ class _DownloadsScreenState extends State<DownloadsScreen> {
     );
   }
 
-  Widget _buildDownloadTile(Map<String, String> item) {
+  Future<void> _confirmClearAll(BuildContext context, int count) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF16161B),
+        title: const Text('Delete all downloads?', style: TextStyle(color: Colors.white)),
+        content: Text(
+          'This permanently removes $count file${count > 1 ? 's' : ''} from this device.',
+          style: const TextStyle(color: Colors.white70),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Cancel', style: TextStyle(color: Colors.white70)),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('Delete', style: TextStyle(color: Colors.redAccent)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+    await DownloadService.clearAll();
+    if (context.mounted) {
+      ToastService.showInfo(context, 'Deleted $count download${count > 1 ? 's' : ''}');
+    }
+  }
+}
+
+class _DownloadTile extends StatelessWidget {
+  final DownloadItem item;
+  const _DownloadTile({required this.item});
+
+  static String _formatBytes(int bytes) {
+    if (bytes <= 0) return '—';
+    if (bytes < 1024 * 1024) return '${(bytes / 1024).toStringAsFixed(0)} KB';
+    if (bytes < 1024 * 1024 * 1024) return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
+    return '${(bytes / (1024 * 1024 * 1024)).toStringAsFixed(2)} GB';
+  }
+
+  String get _subtitle {
+    switch (item.status) {
+      case DownloadStatus.downloading:
+        final pct = (item.progress * 100).toInt();
+        return item.totalBytes > 0
+            ? '$pct% • ${_formatBytes(item.bytes)} / ${_formatBytes(item.totalBytes)}'
+            : '$pct% • ${_formatBytes(item.bytes)}';
+      case DownloadStatus.queued:
+        return 'Waiting to start… (${item.quality.label})';
+      case DownloadStatus.complete:
+        return '${_formatBytes(item.bytes)} • ${item.quality.label} • Ready to watch offline';
+      case DownloadStatus.missing:
+        return item.error ?? 'File removed from device';
+      case DownloadStatus.failed:
+        return item.error ?? 'Download failed';
+    }
+  }
+
+  Color get _subtitleColor {
+    switch (item.status) {
+      case DownloadStatus.failed:
+      case DownloadStatus.missing:
+        return Colors.orangeAccent;
+      case DownloadStatus.complete:
+        return const Color(0xFF10B981);
+      default:
+        return Colors.white54;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
       decoration: BoxDecoration(
@@ -247,32 +208,91 @@ class _DownloadsScreenState extends State<DownloadsScreen> {
         borderRadius: BorderRadius.circular(10),
         border: Border.all(color: Colors.white10),
       ),
-      child: ListTile(
-        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-        leading: Container(
-          width: 50,
-          height: 65,
-          decoration: BoxDecoration(
-            color: const Color(0xFF2A2A2A),
-            borderRadius: BorderRadius.circular(6),
+      child: Column(
+        children: [
+          ListTile(
+            contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            leading: ClipRRect(
+              borderRadius: BorderRadius.circular(6),
+              child: SizedBox(
+                width: 50,
+                height: 65,
+                child: SafeCachedImage(
+                  imageUrl: item.posterUrl,
+                  fit: BoxFit.cover,
+                  errorWidget: (context, url, error) => Container(
+                    color: const Color(0xFF2A2A2A),
+                    child: const Icon(Icons.movie, color: Colors.white54, size: 28),
+                  ),
+                ),
+              ),
+            ),
+            title: Text(
+              item.title,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.white),
+            ),
+            subtitle: Text(
+              _subtitle,
+              style: TextStyle(color: _subtitleColor, fontSize: 12),
+            ),
+            onTap: item.isPlayable ? () => _play(context) : null,
+            trailing: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (item.isPlayable)
+                  IconButton(
+                    tooltip: 'Play offline',
+                    icon: const Icon(Icons.play_circle_fill, color: Color(0xFFE50914)),
+                    onPressed: () => _play(context),
+                  ),
+                IconButton(
+                  tooltip: item.isActive ? 'Cancel' : 'Delete',
+                  icon: Icon(
+                    item.isActive ? Icons.close : Icons.delete_outline,
+                    color: Colors.white54,
+                  ),
+                  onPressed: () => _remove(context),
+                ),
+              ],
+            ),
           ),
-          child: const Icon(Icons.movie, color: Colors.white54, size: 28),
-        ),
-        title: Text(item['title']!, style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.white)),
-        subtitle: Text(
-          '${item['size']} • ${item['quality']} • ${item['duration']}',
-          style: const TextStyle(color: Colors.white54, fontSize: 12),
-        ),
-        trailing: IconButton(
-          icon: const Icon(Icons.delete_outline, color: Colors.white54),
-          onPressed: () {
-            setState(() {
-              _downloads.remove(item);
-            });
-            ToastService.showInfo(context, 'Removed "${item['title']}" from downloads');
-          },
-        ),
+          if (item.status == DownloadStatus.downloading)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(3),
+                child: LinearProgressIndicator(
+                  value: item.progress > 0 ? item.progress : null,
+                  minHeight: 4,
+                  backgroundColor: Colors.white10,
+                  valueColor: const AlwaysStoppedAnimation(Color(0xFFE50914)),
+                ),
+              ),
+            ),
+        ],
       ),
+    );
+  }
+
+  void _play(BuildContext context) {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => VideoPlayerPage.file(title: item.title, path: item.filePath),
+      ),
+    );
+  }
+
+  Future<void> _remove(BuildContext context) async {
+    final wasActive = item.isActive;
+    await DownloadService.remove(item);
+    if (!context.mounted) return;
+    ToastService.showInfo(
+      context,
+      wasActive
+          ? 'Cancelled "${item.title}"'
+          : 'Removed "${item.title}" from downloads',
     );
   }
 }
