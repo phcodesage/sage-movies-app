@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
+import 'package:http/io_client.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:sagemovies/services/api_service.dart';
@@ -155,8 +156,22 @@ class _UpdateDialogContentState extends State<_UpdateDialogContent> {
           ? widget.updateInfo.directApkUrl
           : widget.updateInfo.downloadUrl;
 
+      // Use http.IOClient wrapping dart:io HttpClient so we can enforce an
+      // explicit connection timeout. Plain http.Client().send() has no timeout
+      // and hangs indefinitely when the CDN is slow or unreachable.
+      final ioHttpClient = HttpClient()
+        ..connectionTimeout = const Duration(seconds: 15)
+        ..idleTimeout = const Duration(seconds: 15);
+      final client = IOClient(ioHttpClient);
+
       final request = http.Request('GET', Uri.parse(downloadUrl));
-      final response = await http.Client().send(request);
+      final response = await client
+          .send(request)
+          .timeout(
+            const Duration(seconds: 30),
+            onTimeout: () =>
+                throw Exception('Connection timed out. Please try again.'),
+          );
 
       if (response.statusCode != 200) {
         throw Exception('Download failed with status code ${response.statusCode}');
@@ -170,6 +185,11 @@ class _UpdateDialogContentState extends State<_UpdateDialogContent> {
         await apkFile.delete();
       }
 
+      // Connection established — update status immediately.
+      if (mounted) {
+        setState(() => _statusText = 'Downloading update...');
+      }
+
       final sink = apkFile.openWrite();
       int downloaded = 0;
 
@@ -177,7 +197,7 @@ class _UpdateDialogContentState extends State<_UpdateDialogContent> {
         downloaded += chunk.length;
         sink.add(chunk);
 
-        final p = downloaded / contentLength;
+        final p = downloaded / contentLength.toDouble();
         if (mounted) {
           setState(() {
             _progress = p.clamp(0.0, 1.0);
