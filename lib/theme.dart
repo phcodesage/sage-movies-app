@@ -27,7 +27,12 @@ ThemeData buildDarkTheme() {
       unselectedItemColor: Colors.white70,
       showUnselectedLabels: true,
     ),
-    textTheme: base.textTheme.apply(
+    textTheme: base.textTheme.copyWith(
+      titleLarge: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Colors.white),
+      titleMedium: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: Colors.white),
+      bodyLarge: const TextStyle(fontSize: 16, color: Colors.white),
+      bodyMedium: const TextStyle(fontSize: 14, color: Colors.white70),
+    ).apply(
       bodyColor: Colors.white,
       displayColor: Colors.white,
     ),

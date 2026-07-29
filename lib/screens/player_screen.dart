@@ -52,6 +52,21 @@ class _PlayerScreenState extends State<PlayerScreen> {
     if (_controller.platform is AndroidWebViewController) {
       final awv = _controller.platform as AndroidWebViewController;
       awv.setMediaPlaybackRequiresUserGesture(false);
+      awv.setCustomWidgetCallbacks(
+        onShowCustomWidget: (Widget customWidget, OnHideCustomWidgetCallback callback) {
+          SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
+          SystemChrome.setPreferredOrientations([
+            DeviceOrientation.landscapeLeft,
+            DeviceOrientation.landscapeRight,
+          ]);
+        },
+        onHideCustomWidget: () {
+          SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+          SystemChrome.setPreferredOrientations([
+            DeviceOrientation.portraitUp,
+          ]);
+        },
+      );
     }
 
     _controller.setNavigationDelegate(

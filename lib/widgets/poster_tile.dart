@@ -3,6 +3,7 @@ import 'package:sagemovies/app_state.dart';
 import 'package:sagemovies/models/movie.dart';
 import 'package:sagemovies/screens/studio_movies_screen.dart';
 import 'package:sagemovies/services/toast_service.dart';
+import 'package:sagemovies/widgets/safe_cached_image.dart';
 
 class PosterTile extends StatelessWidget {
   final Movie movie;
@@ -35,16 +36,12 @@ class PosterTile extends StatelessWidget {
           child: Stack(
             fit: StackFit.expand,
             children: [
-              Image.network(
-                movie.posterUrl,
+              SafeCachedImage(
+                imageUrl: movie.posterUrl,
                 fit: BoxFit.cover,
-                cacheWidth: 300,
-                filterQuality: FilterQuality.low,
-                errorBuilder: (context, error, stack) => _fallback(),
-                loadingBuilder: (context, child, progress) {
-                  if (progress == null) return child;
-                  return _fallback(showSpinner: true);
-                },
+                memCacheWidth: 300,
+                placeholder: (context, url) => _fallback(showSpinner: true),
+                errorWidget: (context, url, error) => _fallback(),
               ),
               _GradientBottom(),
               if (movie.rating > 0)

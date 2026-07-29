@@ -1,13 +1,8 @@
-import 'package:flutter/material.dart';
-import 'package:sagemovies/models/movie.dart';
-import 'package:sagemovies/screens/details_screen.dart';
-import 'package:sagemovies/screens/player_screen.dart';
-
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:sagemovies/models/movie.dart';
 import 'package:sagemovies/screens/details_screen.dart';
-import 'package:sagemovies/screens/player_screen.dart';
+import 'package:sagemovies/widgets/safe_cached_image.dart';
 
 class HeroBanner extends StatefulWidget {
   final List<Movie> movies;
@@ -30,7 +25,7 @@ class _HeroBannerState extends State<HeroBanner> {
 
   List<Movie> get _bannerMovies {
     if (widget.movies.isNotEmpty) {
-      return widget.movies.take(10).toList();
+      return widget.movies.take(20).toList();
     }
     if (widget.movie != null) {
       return [widget.movie!];
@@ -79,11 +74,13 @@ class _HeroBannerState extends State<HeroBanner> {
   Widget build(BuildContext context) {
     final list = _bannerMovies;
     if (list.isEmpty) return const SizedBox.shrink();
+    final currentMovie = list[_currentIndex < list.length ? _currentIndex : 0];
 
     return SizedBox(
       height: 420,
       child: Stack(
         children: [
+          // 1. Sliding Image Carousel (Only images move right to left)
           PageView.builder(
             controller: _pageController,
             itemCount: list.length,
@@ -92,111 +89,125 @@ class _HeroBannerState extends State<HeroBanner> {
             },
             itemBuilder: (context, index) {
               final movie = list[index];
-              return Stack(
-                fit: StackFit.expand,
-                children: [
-                  Image.network(
-                    movie.backdropUrl.isNotEmpty ? movie.backdropUrl : movie.posterUrl,
-                    fit: BoxFit.cover,
-                    filterQuality: FilterQuality.low,
-                    errorBuilder: (context, error, stack) => _fallback(),
-                    loadingBuilder: (context, child, progress) {
-                      if (progress == null) return child;
-                      return _fallback(showSpinner: true);
-                    },
-                  ),
-                  const DecoratedBox(
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        begin: Alignment.topCenter,
-                        end: Alignment.bottomCenter,
-                        colors: [
-                          Colors.transparent,
-                          Colors.black45,
-                          Colors.black,
-                        ],
-                        stops: [0.0, 0.6, 1.0],
-                      ),
-                    ),
-                  ),
-                  Positioned(
-                    left: 16,
-                    right: 16,
-                    bottom: 24,
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          movie.title,
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                          style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                                fontWeight: FontWeight.bold,
-                                color: Colors.white,
-                                shadows: const [
-                                  Shadow(blurRadius: 8, color: Colors.black, offset: Offset(0, 2)),
-                                ],
-                              ),
-                        ),
-                        if (movie.overview.isNotEmpty) ...[
-                          const SizedBox(height: 6),
-                          Text(
-                            movie.overview,
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(color: Colors.white70, fontSize: 12),
-                          ),
-                        ],
-                        const SizedBox(height: 14),
-                        Row(
-                          children: [
-                            _PrimaryButton(
-                              icon: Icons.play_arrow,
-                              label: 'Play',
-                              onPressed: () {
-                                Navigator.of(context).push(
-                                  MaterialPageRoute(
-                                    builder: (_) => DetailsScreen(movie: movie),
-                                  ),
-                                );
-                              },
-                            ),
-                            const SizedBox(width: 10),
-                            _SecondaryButton(
-                              icon: Icons.info_outline,
-                              label: 'More Info',
-                              onPressed: () {
-                                Navigator.of(context).push(
-                                  MaterialPageRoute(
-                                    builder: (_) => DetailsScreen(movie: movie),
-                                  ),
-                                );
-                              },
-                            ),
-                          ],
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
+              return SafeCachedImage(
+                imageUrl: movie.backdropUrl.isNotEmpty ? movie.backdropUrl : movie.posterUrl,
+                fit: BoxFit.cover,
+                placeholder: (context, url) => _fallback(showSpinner: true),
+                errorWidget: (context, url, error) => _fallback(),
               );
             },
           ),
+
+          // 2. Fixed Gradient Overlay
+          const DecoratedBox(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [
+                  Colors.transparent,
+                  Colors.black45,
+                  Colors.black,
+                ],
+                stops: [0.0, 0.5, 1.0],
+              ),
+            ),
+          ),
+
+          // 3. Fixed Action Controls & Text Info Overlay (Buttons do NOT move)
+          Positioned(
+            left: 16,
+            right: 16,
+            bottom: 24,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // Animated Title & Overview
+                AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 350),
+                  child: Column(
+                    key: ValueKey(currentMovie.id),
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        currentMovie.title,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                              fontWeight: FontWeight.bold,
+                              color: Colors.white,
+                              shadows: const [
+                                Shadow(blurRadius: 8, color: Colors.black, offset: Offset(0, 2)),
+                              ],
+                            ),
+                      ),
+                      if (currentMovie.overview.isNotEmpty) ...[
+                        const SizedBox(height: 6),
+                        Text(
+                          currentMovie.overview,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(color: Colors.white70, fontSize: 12),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+
+                const SizedBox(height: 14),
+
+                // Fixed Action Buttons
+                Row(
+                  children: [
+                    _PrimaryButton(
+                      icon: Icons.play_arrow,
+                      label: 'Play',
+                      onPressed: () {
+                        Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder: (_) => DetailsScreen(movie: currentMovie),
+                          ),
+                        );
+                      },
+                    ),
+                    const SizedBox(width: 10),
+                    _SecondaryButton(
+                      icon: Icons.info_outline,
+                      label: 'More Info',
+                      onPressed: () {
+                        Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder: (_) => DetailsScreen(movie: currentMovie),
+                          ),
+                        );
+                      },
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+
+          // 4. Fixed Indicator Dots
           if (list.length > 1)
             Positioned(
               right: 16,
-              bottom: 24,
+              bottom: 28,
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: List.generate(
-                  list.length,
+                  list.length > 10 ? 10 : list.length,
                   (i) => AnimatedContainer(
                     duration: const Duration(milliseconds: 300),
                     margin: const EdgeInsets.symmetric(horizontal: 2),
-                    width: _currentIndex == i ? 16 : 6,
+                    width: (_currentIndex % (list.length > 10 ? 10 : list.length)) == i ? 16 : 6,
                     height: 6,
                     decoration: BoxDecoration(
-                      color: _currentIndex == i ? const Color(0xFFE50914) : Colors.white38,
+                      color: (_currentIndex % (list.length > 10 ? 10 : list.length)) == i
+                          ? const Color(0xFFE50914)
+                          : Colors.white38,
                       borderRadius: BorderRadius.circular(3),
                     ),
                   ),
@@ -241,7 +252,6 @@ class _PrimaryButton extends StatelessWidget {
       label: Text(label),
     );
   }
-
 }
 
 class _SecondaryButton extends StatelessWidget {

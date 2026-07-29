@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:sagemovies/services/api_service.dart';
+import 'package:sagemovies/services/preload_service.dart';
 import 'package:sagemovies/services/update_service.dart';
 import 'package:sagemovies/models/movie.dart';
 import 'package:sagemovies/screens/details_screen.dart';
 import 'package:sagemovies/widgets/hero_banner.dart';
 import 'package:sagemovies/widgets/section_row.dart';
+import 'package:unity_ads_plugin/unity_ads_plugin.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -17,19 +19,31 @@ class _HomeScreenState extends State<HomeScreen> {
   final _scrollController = ScrollController();
   double _elevation = 0;
   
-  List<Movie> _trendingMovies = [];
-  List<Movie> _actionMovies = [];
-  List<Movie> _trendingTv = [];
-  List<Movie> _animeList = [];
-  bool _loading = true;
+  late List<Movie> _trendingMovies;
+  late List<Movie> _actionMovies;
+  late List<Movie> _trendingTv;
+  late List<Movie> _animeList;
+  bool _loading = false;
+  bool _isBannerAdLoaded = false;
 
   @override
   void initState() {
     super.initState();
+    // Instantly load preloaded dataset so app displays immediately with 0 delay
+    _trendingMovies = PreloadService.getTrendingMovies();
+    _actionMovies = PreloadService.getActionMovies();
+    _trendingTv = PreloadService.getTrendingTv();
+    _animeList = PreloadService.getAnimeCollection();
+
     _scrollController.addListener(() {
       final e = _scrollController.offset > 24 ? 2.0 : 0.0;
       if (e != _elevation) setState(() => _elevation = e);
     });
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      UpdateService.startPeriodicUpdateCheck(context);
+    });
+
     _loadData();
   }
 
@@ -44,16 +58,18 @@ class _HomeScreenState extends State<HomeScreen> {
 
       if (mounted) {
         setState(() {
-          _trendingMovies = results[0];
-          _actionMovies = results[1];
-          _trendingTv = results[2];
-          _animeList = results[3];
+          if (results[0].isNotEmpty) _trendingMovies = results[0];
+          if (results[1].isNotEmpty) _actionMovies = results[1];
+          if (results[2].isNotEmpty) _trendingTv = results[2];
+          if (results[3].isNotEmpty) _animeList = results[3];
           _loading = false;
         });
 
-        // Wireless backend OTA update check
+        // Wireless backend OTA update check & image disk precaching
         WidgetsBinding.instance.addPostFrameCallback((_) {
-          UpdateService.promptUpdateIfNeeded(context);
+          PreloadService.precacheMovieImages(context, _trendingMovies);
+          PreloadService.precacheMovieImages(context, _actionMovies);
+          PreloadService.precacheMovieImages(context, _trendingTv);
         });
       }
     } catch (e) {
@@ -72,7 +88,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
-    if (_loading) {
+    if (_loading && _trendingMovies.isEmpty) {
       return Scaffold(
         backgroundColor: Colors.black,
         body: Center(
@@ -90,8 +106,6 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
       );
     }
-
-    final feature = _trendingMovies.isNotEmpty ? _trendingMovies.first : null;
 
     return Scaffold(
       backgroundColor: Colors.black,
@@ -137,13 +151,49 @@ class _HomeScreenState extends State<HomeScreen> {
                       onTap: (m) => _openDetails(context, m),
                       tall: true,
                     ),
-                  const SizedBox(height: 32),
                 ],
               ),
             ),
           ],
         ),
       ),
+      bottomNavigationBar: _isBannerAdLoaded
+          ? SafeArea(
+              child: SizedBox(
+                height: 50,
+                child: UnityBannerAd(
+                  placementId: 'Banner_Android',
+                  onLoad: (placementId) {
+                    if (mounted && !_isBannerAdLoaded) {
+                      setState(() => _isBannerAdLoaded = true);
+                    }
+                  },
+                  onFailed: (placementId, error, message) {
+                    if (mounted && _isBannerAdLoaded) {
+                      setState(() => _isBannerAdLoaded = false);
+                    }
+                  },
+                ),
+              ),
+            )
+          : Stack(
+              children: [
+                SizedBox(
+                  height: 1,
+                  child: UnityBannerAd(
+                    placementId: 'Banner_Android',
+                    onLoad: (placementId) {
+                      if (mounted) setState(() => _isBannerAdLoaded = true);
+                    },
+                    onFailed: (placementId, error, message) {
+                      if (mounted && _isBannerAdLoaded) {
+                        setState(() => _isBannerAdLoaded = false);
+                      }
+                    },
+                  ),
+                ),
+              ],
+            ),
     );
   }
 

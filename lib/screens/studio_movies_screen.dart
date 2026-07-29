@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:sagemovies/models/movie.dart';
 import 'package:sagemovies/screens/details_screen.dart';
 import 'package:sagemovies/services/api_service.dart';
+import 'package:sagemovies/services/preload_service.dart';
 import 'package:sagemovies/widgets/poster_tile.dart';
 
 class StudioMoviesScreen extends StatefulWidget {
@@ -27,6 +28,13 @@ class _StudioMoviesScreenState extends State<StudioMoviesScreen> {
   @override
   void initState() {
     super.initState();
+    if (widget.studioId != null) {
+      final cached = PreloadService.getCollection('cached_studio_${widget.studioId}');
+      if (cached.isNotEmpty) {
+        _movies = cached;
+        _loading = false;
+      }
+    }
     _loadStudioMovies();
   }
 
@@ -39,15 +47,17 @@ class _StudioMoviesScreenState extends State<StudioMoviesScreen> {
           results = await ApiService.fetchMoviesByStudio(idNum);
         }
       }
-      if (results.isEmpty) {
+      if (results.isEmpty && _movies.isEmpty) {
         results = await ApiService.search(widget.studioName);
       }
 
-      if (mounted) {
+      if (mounted && results.isNotEmpty) {
         setState(() {
           _movies = results.where((m) => m.posterUrl.isNotEmpty).toList();
           _loading = false;
         });
+      } else if (mounted) {
+        setState(() => _loading = false);
       }
     } catch (e) {
       if (mounted) {

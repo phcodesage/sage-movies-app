@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 import 'package:webview_flutter_android/webview_flutter_android.dart';
 import 'package:webview_flutter_wkwebview/webview_flutter_wkwebview.dart';
@@ -80,6 +81,21 @@ class _WebPlayerPageState extends State<WebPlayerPage> {
       AndroidWebViewController.enableDebugging(kDebugMode);
       final awv = (controller.platform as AndroidWebViewController);
       awv.setMediaPlaybackRequiresUserGesture(false);
+      awv.setCustomWidgetCallbacks(
+        onShowCustomWidget: (Widget customWidget, OnHideCustomWidgetCallback callback) {
+          SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
+          SystemChrome.setPreferredOrientations([
+            DeviceOrientation.landscapeLeft,
+            DeviceOrientation.landscapeRight,
+          ]);
+        },
+        onHideCustomWidget: () {
+          SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+          SystemChrome.setPreferredOrientations([
+            DeviceOrientation.portraitUp,
+          ]);
+        },
+      );
     }
 
     _controller = controller;

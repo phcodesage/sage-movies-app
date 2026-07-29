@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/material.dart';
@@ -26,12 +27,10 @@ class AppVersionInfo {
 
   factory AppVersionInfo.fromJson(Map<String, dynamic> json) {
     return AppVersionInfo(
-      latestVersion: json['latest_version'] ?? '1.0.2',
-      versionCode: json['version_code'] ?? 3,
-      downloadUrl: json['download_url'] ??
-          'https://pub-bd093e291a8941608e8a6fe70c3aca53.r2.dev/sagemovies-v1.0.0.apk',
-      directApkUrl: json['direct_apk_url'] ??
-          'https://pub-bd093e291a8941608e8a6fe70c3aca53.r2.dev/sagemovies-v1.0.0.apk',
+      latestVersion: json['latest_version'] ?? '1.0.0',
+      versionCode: json['version_code'] ?? 1,
+      downloadUrl: json['download_url'] ?? '',
+      directApkUrl: json['direct_apk_url'] ?? '',
       releaseNotes: json['release_notes'] ?? 'New in-app wireless update engine & studio hub features.',
       forceUpdate: json['force_update'] ?? false,
     );
@@ -39,12 +38,13 @@ class AppVersionInfo {
 }
 
 class UpdateService {
-  static const int currentVersionCode = 4;
-  static const String currentVersionName = '1.0.3';
+  static const int currentVersionCode = 20;
+  static const String currentVersionName = '1.4.4';
   static const MethodChannel _installerChannel =
       MethodChannel('com.example.sagemovies/installer');
 
   static ValueNotifier<AppVersionInfo?> availableUpdate = ValueNotifier(null);
+  static bool _hasPrompted = false;
 
   static Future<AppVersionInfo?> checkUpdate() async {
     try {
@@ -71,6 +71,20 @@ class UpdateService {
     return null;
   }
 
+  static void startPeriodicUpdateCheck(BuildContext context) {
+    promptUpdateIfNeeded(context);
+    Timer.periodic(const Duration(seconds: 30), (_) {
+      if (context.mounted) {
+        checkUpdate().then((info) {
+          if (info != null && !_hasPrompted && context.mounted) {
+            _hasPrompted = true;
+            showUpdateDialog(context, info);
+          }
+        });
+      }
+    });
+  }
+
   static void promptUpdateIfNeeded(BuildContext context,
       {bool showNoUpdateToast = false}) async {
     final updateInfo = await checkUpdate();
@@ -80,19 +94,23 @@ class UpdateService {
     if (updateInfo == null) {
       if (showNoUpdateToast) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Your app is up to date (v1.0.0)'),
-            backgroundColor: Color(0xFF1E1E24),
+          SnackBar(
+            content: Text('Your app is up to date (v$currentVersionName)'),
+            backgroundColor: const Color(0xFF1E1E24),
           ),
         );
       }
       return;
     }
 
-    showUpdateDialog(context, updateInfo);
+    if (!_hasPrompted) {
+      _hasPrompted = true;
+      showUpdateDialog(context, updateInfo);
+    }
   }
 
   static void showUpdateDialog(BuildContext context, AppVersionInfo updateInfo) {
+    _hasPrompted = true;
     showDialog(
       context: context,
       barrierDismissible: !updateInfo.forceUpdate,

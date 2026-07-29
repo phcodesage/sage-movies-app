@@ -4,11 +4,24 @@ import 'package:sagemovies/screens/downloads_screen.dart';
 import 'package:sagemovies/screens/home_screen.dart';
 import 'package:sagemovies/screens/my_list_screen.dart';
 import 'package:sagemovies/screens/search_screen.dart';
+import 'package:sagemovies/services/preload_service.dart';
 import 'package:sagemovies/theme.dart';
 import 'package:sagemovies/widgets/studio_bottom_bar.dart';
 
-void main() {
+import 'package:unity_ads_plugin/unity_ads_plugin.dart';
+
+void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await PreloadService.init();
+  UnityAds.init(
+    gameId: '800108318',
+    testMode: false,
+    onComplete: () {
+      debugPrint('Unity Ads Initialized Successfully');
+      UnityAds.load(placementId: 'Interstitial_Android');
+    },
+    onFailed: (error, message) => debugPrint('Unity Ads Init Failed: $error $message'),
+  );
   runApp(AppStateProvider(child: const SageMoviesApp()));
 }
 
