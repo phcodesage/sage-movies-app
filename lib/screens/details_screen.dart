@@ -297,27 +297,7 @@ class _DetailsScreenState extends State<DetailsScreen> {
   }
 
   void _triggerAdAndWatch() {
-    if (_isPlaying) {
-      _startWatching();
-      return;
-    }
-    
-    // Show 5-second skippable ad dialog or Unity Video Ad
-    UnityAds.showVideoAd(
-      placementId: 'Interstitial_Android',
-      onComplete: (placementId) {
-        _startWatching();
-        UnityAds.load(placementId: 'Interstitial_Android');
-      },
-      onFailed: (placementId, error, message) {
-        debugPrint('Unity Ad Error: $error $message. Launching Skippable Ad Modal.');
-        _showSkippableAdDialog();
-      },
-      onSkipped: (placementId) {
-        _startWatching();
-        UnityAds.load(placementId: 'Interstitial_Android');
-      },
-    );
+    _startWatching();
   }
 
   void _triggerAutoPlayScript() {
