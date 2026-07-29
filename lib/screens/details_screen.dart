@@ -148,12 +148,47 @@ class _DetailsScreenState extends State<DetailsScreen> {
             DeviceOrientation.landscapeLeft,
             DeviceOrientation.landscapeRight,
           ]);
+          Navigator.of(context).push(
+            PageRouteBuilder(
+              opaque: true,
+              barrierColor: Colors.black,
+              pageBuilder: (context, anim1, anim2) => Scaffold(
+                backgroundColor: Colors.black,
+                body: Stack(
+                  children: [
+                    Positioned.fill(child: customWidget),
+                    Positioned(
+                      top: 16,
+                      left: 16,
+                      child: SafeArea(
+                        child: CircleAvatar(
+                          backgroundColor: Colors.black54,
+                          child: IconButton(
+                            icon: const Icon(Icons.close, color: Colors.white, size: 20),
+                            onPressed: () {
+                              callback();
+                              if (Navigator.of(context).canPop()) {
+                                Navigator.of(context).pop();
+                              }
+                            },
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          );
         },
         onHideCustomWidget: () {
           SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
           SystemChrome.setPreferredOrientations([
             DeviceOrientation.portraitUp,
           ]);
+          if (Navigator.of(context).canPop()) {
+            Navigator.of(context).pop();
+          }
         },
       );
     }
@@ -297,7 +332,27 @@ class _DetailsScreenState extends State<DetailsScreen> {
   }
 
   void _triggerAdAndWatch() {
-    _startWatching();
+    if (_isPlaying) {
+      _startWatching();
+      return;
+    }
+    
+    // Show 5-second skippable ad dialog or Unity Video Ad
+    UnityAds.showVideoAd(
+      placementId: 'Interstitial_Android',
+      onComplete: (placementId) {
+        _startWatching();
+        UnityAds.load(placementId: 'Interstitial_Android');
+      },
+      onFailed: (placementId, error, message) {
+        debugPrint('Unity Ad Error: $error $message. Launching Skippable Ad Modal.');
+        _showSkippableAdDialog();
+      },
+      onSkipped: (placementId) {
+        _startWatching();
+        UnityAds.load(placementId: 'Interstitial_Android');
+      },
+    );
   }
 
   void _triggerAutoPlayScript() {
