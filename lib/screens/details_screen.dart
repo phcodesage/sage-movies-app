@@ -329,6 +329,12 @@ class _DetailsScreenState extends State<DetailsScreen> {
 
   Future<void> _startWatching() async {
     final type = (widget.movie.mediaType == 'tv' || (_fullDetails != null && (_fullDetails!['first_air_date'] != null || _fullDetails!['number_of_seasons'] != null))) ? 'tv' : 'movie';
+    // Playing an episode counts as watching it. Movies have no episode grid, so this
+    // only applies to TV. Idempotent, so repeated plays don't churn storage.
+    if (type == 'tv' && mounted) {
+      AppStateProvider.read(context)
+          .markEpisodeWatched(widget.movie.id, _selectedSeason, _selectedEpisode);
+    }
     String? url = await ApiService.getVideoSource(
       type,
       widget.movie.id,
@@ -1375,6 +1381,8 @@ class _DetailsScreenState extends State<DetailsScreen> {
                                   itemBuilder: (context, idx) {
                                     final epNum = idx + 1;
                                     final isSelected = epNum == _selectedEpisode;
+                                    final isWatched = app.isEpisodeWatched(
+                                        widget.movie.id, _selectedSeason, epNum);
                                     return Padding(
                                       padding: const EdgeInsets.only(right: 8),
                                       child: InkWell(
@@ -1389,18 +1397,57 @@ class _DetailsScreenState extends State<DetailsScreen> {
                                             color: isSelected ? const Color(0xFFE50914) : const Color(0xFF0F0F11),
                                             borderRadius: BorderRadius.circular(8),
                                             border: Border.all(
-                                              color: isSelected ? const Color(0xFFE50914) : Colors.white24,
+                                              color: isSelected
+                                                  ? const Color(0xFFE50914)
+                                                  : isWatched
+                                                      ? const Color(0xFF2E7D5B)
+                                                      : Colors.white24,
                                             ),
                                           ),
-                                          child: Center(
-                                            child: Text(
-                                              'E$epNum',
-                                              style: TextStyle(
-                                                color: isSelected ? Colors.white : Colors.white70,
-                                                fontSize: 12,
-                                                fontWeight: isSelected ? FontWeight.w900 : FontWeight.bold,
+                                          child: Stack(
+                                            children: [
+                                              Center(
+                                                child: Text(
+                                                  'E$epNum',
+                                                  style: TextStyle(
+                                                    color: isSelected ? Colors.white : Colors.white70,
+                                                    fontSize: 12,
+                                                    fontWeight: isSelected ? FontWeight.w900 : FontWeight.bold,
+                                                  ),
+                                                ),
                                               ),
-                                            ),
+                                              // Watched toggle badge, top-right. Tapping it marks the
+                                              // episode watched/unwatched without starting playback.
+                                              Positioned(
+                                                top: 2,
+                                                right: 2,
+                                                child: GestureDetector(
+                                                  behavior: HitTestBehavior.opaque,
+                                                  onTap: () => app.toggleEpisodeWatched(
+                                                      widget.movie.id, _selectedSeason, epNum),
+                                                  child: Container(
+                                                    width: 14,
+                                                    height: 14,
+                                                    decoration: BoxDecoration(
+                                                      shape: BoxShape.circle,
+                                                      color: isWatched
+                                                          ? const Color(0xFF10B981)
+                                                          : Colors.black26,
+                                                      border: Border.all(
+                                                        color: isWatched
+                                                            ? const Color(0xFF34D399)
+                                                            : Colors.white38,
+                                                        width: 1,
+                                                      ),
+                                                    ),
+                                                    child: isWatched
+                                                        ? const Icon(Icons.check,
+                                                            size: 9, color: Colors.white)
+                                                        : null,
+                                                  ),
+                                                ),
+                                              ),
+                                            ],
                                           ),
                                         ),
                                       ),

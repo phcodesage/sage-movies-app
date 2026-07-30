@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
@@ -31,6 +32,12 @@ class DownloadService {
   static const String _prefsKey = 'downloads_v1';
   static const int _segmentRetries = 3;
   static const int _maxConsecutiveFailures = 5;
+
+  // How many HLS segments to fetch at once. The network round-trip per segment is the
+  // bottleneck, not CPU or disk, so fetching a window in parallel is several times
+  // faster than the old one-at-a-time loop. Kept modest so we don't trip CDN rate
+  // limits or buffer too much in memory (peak ≈ this many segments).
+  static const int _segmentConcurrency = 6;
 
   static final ValueNotifier<List<DownloadItem>> items =
       ValueNotifier<List<DownloadItem>>([]);
@@ -227,85 +234,113 @@ class DownloadService {
     VideoQuality quality,
   ) async {
     final headers = _replayHeaders(hit);
-    var playlistUrl = Uri.parse(hit.url);
-    var body = await _fetchText(playlistUrl, headers);
-
-    // A master playlist lists variants; pick the one matching the quality tier.
-    if (body.contains('#EXT-X-STREAM-INF')) {
-      final variant = _pickVariantForQuality(body, playlistUrl, quality);
-      if (variant == null) {
-        throw DownloadException('Could not read the stream quality list.');
-      }
-      playlistUrl = variant;
-      body = await _fetchText(playlistUrl, headers);
-    }
-
-    if (_isEncrypted(body)) {
-      throw DownloadException(
-        "This stream is encrypted and can't be saved offline.",
-      );
-    }
-
-    final segments = _parseSegments(body, playlistUrl);
-    if (segments.isEmpty) {
-      throw DownloadException('No downloadable segments found in this stream.');
-    }
-
-    item.totalBytes = 0;
-    final sink = file.openWrite();
-    var consecutiveFailures = 0;
-    var downloaded = 0;
-
+    // One client for the whole download so the CDN connection is kept alive and reused
+    // across every segment instead of a fresh TCP+TLS handshake per request.
+    final client = http.Client();
     try {
-      for (var i = 0; i < segments.length; i++) {
-        if (_isCancelled(item.id)) throw DownloadException('Download cancelled.');
+      var playlistUrl = Uri.parse(hit.url);
+      var body = await _fetchText(client, playlistUrl, headers);
 
-        List<int>? data;
-        for (var attempt = 0; attempt < _segmentRetries; attempt++) {
-          try {
-            final res = await http
-                .get(segments[i], headers: headers)
-                .timeout(const Duration(seconds: 30));
-            if (res.statusCode == 200) {
-              data = res.bodyBytes;
-              break;
-            }
-            if (res.statusCode == 403 || res.statusCode == 410) {
-              // Signed segment URLs expire; no point retrying this one harder.
-              break;
-            }
-          } catch (e) {
-            debugPrint('[DownloadService] segment $i attempt $attempt: $e');
-          }
-          await Future.delayed(Duration(milliseconds: 300 * (attempt + 1)));
+      // A master playlist lists variants; pick the one matching the quality tier.
+      if (body.contains('#EXT-X-STREAM-INF')) {
+        final variant = _pickVariantForQuality(body, playlistUrl, quality);
+        if (variant == null) {
+          throw DownloadException('Could not read the stream quality list.');
         }
-
-        if (data == null) {
-          consecutiveFailures++;
-          if (consecutiveFailures >= _maxConsecutiveFailures) {
-            throw DownloadException('Download link expired, please retry.');
-          }
-          continue;
-        }
-
-        consecutiveFailures = 0;
-        sink.add(data);
-        downloaded += data.length;
-
-        item.bytes = downloaded;
-        item.progress = ((i + 1) / segments.length).clamp(0.0, 1.0);
-        _notify();
+        playlistUrl = variant;
+        body = await _fetchText(client, playlistUrl, headers);
       }
-    } on FileSystemException catch (e) {
-      throw DownloadException('Not enough space on device (${e.osError?.message ?? e.message}).');
+
+      if (_isEncrypted(body)) {
+        throw DownloadException(
+          "This stream is encrypted and can't be saved offline.",
+        );
+      }
+
+      final segments = _parseSegments(body, playlistUrl);
+      if (segments.isEmpty) {
+        throw DownloadException('No downloadable segments found in this stream.');
+      }
+
+      item.totalBytes = 0;
+      final sink = file.openWrite();
+      var consecutiveFailures = 0;
+      var downloaded = 0;
+      var processed = 0;
+
+      try {
+        // Fetch segments in parallel windows of [_segmentConcurrency]. Each window is
+        // downloaded concurrently, then written to disk strictly in playlist order so
+        // the concatenated MPEG-TS stays valid. Peak memory is one window of segments.
+        for (var start = 0; start < segments.length; start += _segmentConcurrency) {
+          if (_isCancelled(item.id)) throw DownloadException('Download cancelled.');
+
+          final end = math.min(start + _segmentConcurrency, segments.length);
+          final chunk = await Future.wait([
+            for (var i = start; i < end; i++) _fetchSegment(client, segments[i], headers),
+          ]);
+
+          for (final data in chunk) {
+            processed++;
+            item.progress = (processed / segments.length).clamp(0.0, 1.0);
+
+            if (data == null) {
+              consecutiveFailures++;
+              if (consecutiveFailures >= _maxConsecutiveFailures) {
+                throw DownloadException('Download link expired, please retry.');
+              }
+              _notify();
+              continue;
+            }
+
+            consecutiveFailures = 0;
+            sink.add(data);
+            downloaded += data.length;
+            item.bytes = downloaded;
+            _notify();
+          }
+        }
+      } on FileSystemException catch (e) {
+        throw DownloadException('Not enough space on device (${e.osError?.message ?? e.message}).');
+      } finally {
+        await sink.flush();
+        await sink.close();
+      }
     } finally {
-      await sink.flush();
-      await sink.close();
+      client.close();
     }
   }
 
-  static Future<String> _fetchText(Uri url, Map<String, String> headers) async {
-    final res = await http.get(url, headers: headers).timeout(const Duration(seconds: 20));
+  /// Fetches a single HLS segment with bounded retries. Never throws — a segment that
+  /// can't be retrieved returns null so the caller can count it against the consecutive
+  /// -failure budget (and so a failure in one parallel fetch never rejects the batch).
+  static Future<List<int>?> _fetchSegment(
+    http.Client client,
+    Uri url,
+    Map<String, String> headers,
+  ) async {
+    for (var attempt = 0; attempt < _segmentRetries; attempt++) {
+      try {
+        final res = await client.get(url, headers: headers).timeout(const Duration(seconds: 30));
+        if (res.statusCode == 200) return res.bodyBytes;
+        if (res.statusCode == 403 || res.statusCode == 410) {
+          // Signed segment URLs expire; no point retrying this one harder.
+          break;
+        }
+      } catch (e) {
+        debugPrint('[DownloadService] segment attempt $attempt: $e');
+      }
+      await Future.delayed(Duration(milliseconds: 300 * (attempt + 1)));
+    }
+    return null;
+  }
+
+  static Future<String> _fetchText(
+    http.Client client,
+    Uri url,
+    Map<String, String> headers,
+  ) async {
+    final res = await client.get(url, headers: headers).timeout(const Duration(seconds: 20));
     if (res.statusCode == 403 || res.statusCode == 401) {
       throw DownloadException(
         "This server doesn't allow downloads. Try a different server.",
@@ -382,12 +417,6 @@ class DownloadService {
         }
         return variants[variants.length ~/ 2].uri;
     }
-  }
-
-  // Kept for reference; replaced by _pickVariantForQuality.
-  @Deprecated('Use _pickVariantForQuality instead')
-  static Uri? _pickBestVariant(String playlist, Uri base) {
-    return _pickVariantForQuality(playlist, base, VideoQuality.high);
   }
 
   static List<Uri> _parseSegments(String playlist, Uri base) {
